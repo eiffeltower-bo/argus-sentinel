@@ -7,8 +7,8 @@ order peek samples frames.
 
 from pathlib import Path
 
-from faces_cv.detection import Detection
-from faces_cv.pipeline import PeekResult, peek_video, peek_videos
+from argus.core import Detection
+from argus.pipeline import PeekResult, peek_video, peek_videos
 
 
 def _person(score=0.9):

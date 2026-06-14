@@ -14,14 +14,14 @@ def _():
 @app.cell(hide_code=True)
 def _(mo):
     mo.md("""
-    # 🚗 DVR vehicle tracking — the `faces_cv` SDK
+    # 🚗 DVR vehicle tracking — the `argus` SDK
 
     Same SDK as `01`, pointed at **vehicles** instead of people. One call switches the
     target — the COCO vehicle classes (car, motorcycle, bus, truck) — and the per-track
     `type` falls out of the metrics for free:
 
     ```python
-    from faces_cv import track_video
+    from argus import track_video
     result = track_video(clip, targets=("vehicle",), device="cuda", max_frames=300)
     ```
 
@@ -48,7 +48,7 @@ def _():
     import altair as alt
     import polars as pl
 
-    from faces_cv import UltralyticsDetector, peek_video, track_video
+    from argus import UltralyticsDetector, peek_video, track_video
 
     return Path, UltralyticsDetector, alt, peek_video, pl, random, time, track_video
 
@@ -100,7 +100,7 @@ def _(mo):
     resolution (`yolo11n` @ `imgsz=320`) — fast triage to spot which proxies have traffic.
 
     ```python
-    from faces_cv import peek_video
+    from argus import peek_video
     peek_video(clip, targets=("vehicle",), device="cuda").interesting   # -> True / False
     ```
     """)

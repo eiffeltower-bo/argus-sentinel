@@ -1,7 +1,7 @@
 [project]
-name = "faces"
+name = "argus"
 version = "0.1.0"
-description = "Add your description here"
+description = "On-prem surveillance-footage analysis & understanding (detection, tracking, triage)."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -25,6 +25,6 @@ testpaths = ["tests"]
 [tool.marimo.runtime]
 # Headroom for embedded video output (we downscale displayed videos, but allow margin).
 output_max_bytes = 50_000_000
-# Put the repo root on sys.path so `import faces_cv` resolves for notebooks in examples/
+# Put the repo root on sys.path so `import argus` resolves for notebooks in examples/
 # (marimo otherwise only adds the notebook's own directory). Launch marimo from the repo root.
 pythonpath = ["."]

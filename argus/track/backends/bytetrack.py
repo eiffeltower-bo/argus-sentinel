@@ -1,63 +1,16 @@
-"""Tracking — a model-agnostic ``Tracker`` interface plus a ByteTrack backend.
+"""ByteTrack tracker backend (implements the core ``Tracker`` protocol).
 
-Tracking-by-detection, decoupled from detection: a :class:`Tracker` consumes the
-:class:`~faces_cv.detection.Detection` list for one frame and returns :class:`Track`
-objects with stable ``track_id``s. Swap the backend by providing another class with
-the same ``.update`` / ``.reset`` signature.
-
-The default :class:`ByteTrackTracker` drives ultralytics' bundled ``BYTETracker``
-standalone (no ``model.track()``), via a small numpy adapter — so detector and tracker
-are independently pluggable.
+Drives ultralytics' bundled ``BYTETracker`` standalone (no ``model.track()``) via a small
+numpy adapter, so detector and tracker stay independently pluggable.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Protocol, runtime_checkable
 
 import numpy as np
 
-from .detection import Detection
-
-# COCO classes we care about, and how they roll up into categories.
-COCO_LABELS: dict[int, str] = {0: "person", 2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
-CATEGORY_BY_CLASS: dict[int, str] = {
-    0: "person", 2: "vehicle", 3: "vehicle", 5: "vehicle", 7: "vehicle"
-}
-TARGET_CLASSES: dict[str, list[int]] = {"person": [0], "vehicle": [2, 3, 5, 7]}
-
-
-@dataclass(frozen=True)
-class Track:
-    """A tracked object in one frame: a box plus a stable ``track_id``."""
-
-    x1: float
-    y1: float
-    x2: float
-    y2: float
-    score: float
-    track_id: int
-    class_id: int | None = None
-    label: str | None = None
-    category: str | None = None
-
-    @property
-    def xyxy(self) -> tuple[float, float, float, float]:
-        return (self.x1, self.y1, self.x2, self.y2)
-
-    @property
-    def center(self) -> tuple[float, float]:
-        return ((self.x1 + self.x2) / 2, (self.y1 + self.y2) / 2)
-
-
-@runtime_checkable
-class Tracker(Protocol):
-    """Associate per-frame detections into tracks. Frames must be fed in order."""
-
-    def update(self, detections: list[Detection], frame: np.ndarray) -> list[Track]: ...
-
-    def reset(self) -> None: ...
+from ...core import CATEGORY_BY_CLASS, COCO_LABELS, Detection, Track
 
 
 class _DetectionsAdapter:
@@ -103,8 +56,8 @@ class ByteTrackTracker:
 
     Defaults mirror ``ultralytics/cfg/trackers/bytetrack.yaml``. Pure motion+IoU
     association (no appearance model), so it ignores the frame image — but ``update``
-    keeps the ``frame`` arg to satisfy the :class:`Tracker` protocol. ``track_buffer``
-    is how many frames a lost track is kept alive before retirement.
+    keeps the ``frame`` arg to satisfy the ``Tracker`` protocol. ``track_buffer`` is how
+    many frames a lost track is kept alive before retirement.
     """
 
     def __init__(

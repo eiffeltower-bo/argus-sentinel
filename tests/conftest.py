@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import pytest
 
-from faces_cv.detection import Detection
+from argus.core import Detection
 
 
 class ScriptedDetector:
