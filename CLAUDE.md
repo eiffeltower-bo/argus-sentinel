@@ -5,11 +5,16 @@ recorded video, heading toward face embedding + vector search.
 
 - **Start here:** [HANDOFF.md](HANDOFF.md) (current state + next task) and
   [context/implementation-plan.md](context/implementation-plan.md) (the system design).
-- **Detectors:** `faces_cv/detection.py` — model-agnostic `PersonDetector` / `FaceDetector`
-  interfaces with YOLO11 (person) and YuNet/Haar (face) backends.
-- **Notebooks** are marimo (`.py`), run from the repo root (`uv run marimo edit NN_*.py`) so
-  `import faces_cv` resolves. `03_mot17_video_pipeline.py` is the template for video work.
-- Always **detect at full resolution, display downscaled**; use `avc1` (H.264) for `mo.video`.
+- **SDK:** `faces_cv/` is a model-agnostic detection + tracking library —
+  `detection.py` (`Detection`, `Detector` protocol, `UltralyticsDetector`),
+  `tracking.py` (`Track`, `Tracker` protocol, `ByteTrackTracker`), `pipeline.py`
+  (`VideoTracker`, `track_video`, `TrackingResult`). Swap backends via the protocols.
+- **Notebooks** are marimo (`.py`) in `examples/`, run from the repo root
+  (`uv run marimo edit examples/NN_*.py`) so `import faces_cv` resolves. They are thin
+  demos of the SDK — `examples/01_dvr_person_tracking.py` is the template for video work.
+- Always **detect at full resolution, display downscaled**; rendering writes `mp4v` then
+  transcodes to H.264 via system `ffmpeg` (this OpenCV wheel has no H.264 encoder).
+- Tests: `uv run pytest` — fast synthetic suite, no GPU/weights/data needed.
 
 ## marimo notebook rules
 

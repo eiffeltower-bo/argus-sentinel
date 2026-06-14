@@ -1,9 +1,8 @@
-"""Person detection — a model-agnostic interface plus a YOLO implementation.
+"""Object detection — a model-agnostic interface plus a YOLO implementation.
 
-This is the Phase-0 seed of the ``PersonDetector`` contract described in
-``context/implementation-plan.md``: the pipeline depends on the protocol, not on
-any specific model. Swap the backend by providing another class with the same
-``.detect(frame)`` signature (e.g. a commercial-clean YOLOX detector later).
+The pipeline depends on the ``Detector`` protocol, not on any specific model: swap the
+backend by providing another class with the same ``.detect(frame)`` signature (e.g. an
+ONNX/TensorRT detector for speed, or a commercial-clean model later).
 """
 
 from __future__ import annotations
@@ -16,13 +15,20 @@ import numpy as np
 
 @dataclass(frozen=True)
 class Detection:
-    """A single person detection, in absolute pixel xyxy coordinates."""
+    """A single object detection, in absolute pixel xyxy coordinates.
+
+    ``class_id`` / ``label`` are optional so single-class detectors can emit a bare
+    ``Detection(x1, y1, x2, y2, score)``; multi-class detectors fill them in so
+    downstream tracking can categorise.
+    """
 
     x1: float
     y1: float
     x2: float
     y2: float
     score: float
+    class_id: int | None = None
+    label: str | None = None
 
     @property
     def xyxy(self) -> tuple[float, float, float, float]:
@@ -30,152 +36,94 @@ class Detection:
 
 
 @runtime_checkable
-class PersonDetector(Protocol):
-    """Detect people in a single BGR frame (H x W x 3, uint8)."""
+class Detector(Protocol):
+    """Detect objects in a single BGR frame (H x W x 3, uint8).
+
+    The model-agnostic contract the tracking pipeline depends on: any object with
+    this ``.detect`` signature is a valid backend, ultralytics or otherwise.
+    """
 
     def detect(self, frame: np.ndarray) -> list[Detection]: ...
 
 
-class YoloPersonDetector:
-    """Ultralytics YOLO person detector (COCO class 0 = 'person')."""
+class UltralyticsDetector:
+    """Multi-class ultralytics YOLO detector behind the ``Detector`` protocol.
 
-    PERSON_CLASS_ID = 0
+    Each ``Detection`` carries its ``class_id`` and ``label`` (from ``model.names``) so
+    the tracker can tag tracks by category. ``classes`` restricts to a COCO subset (e.g.
+    ``[0]`` for person, ``[2, 3, 5, 7]`` for vehicles); ``classes=None`` keeps every class.
+    """
 
     def __init__(
         self,
-        weights: str = "yolo11n.pt",
+        weights: str = "yolo11s.pt",
+        classes: list[int] | None = None,
         conf: float = 0.25,
         device: str | None = None,
+        imgsz: int | None = None,
     ) -> None:
         from ultralytics import YOLO  # lazy: heavy import only when used
 
         self.model = YOLO(weights)
+        self.classes = classes
         self.conf = conf
         self.device = device
+        # Inference resolution (square). None -> model default (640). Lower (e.g. 320) is
+        # faster but misses smaller objects — used by the fast `peek_video` pre-scan.
+        self.imgsz = imgsz
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         results = self.model.predict(
             frame,
-            classes=[self.PERSON_CLASS_ID],
+            classes=self.classes,
             conf=self.conf,
             device=self.device,
             verbose=False,
+            **({} if self.imgsz is None else {"imgsz": self.imgsz}),
         )
+        names = self.model.names
         dets: list[Detection] = []
         for r in results:
-            for b in r.boxes:
-                x1, y1, x2, y2 = b.xyxy[0].tolist()
-                dets.append(Detection(x1, y1, x2, y2, float(b.conf[0])))
+            dets.extend(self._boxes_to_detections(r, names))
         return dets
 
+    def detect_batch(
+        self, frames: list[np.ndarray], *, batch_size: int = 32
+    ) -> list[list[Detection]]:
+        """Detect on many frames at once — one ``predict`` per ``batch_size`` chunk.
 
-# --------------------------------------------------------------------------- faces
-@dataclass(frozen=True)
-class FaceDetection:
-    """A single face detection, in absolute pixel xyxy coordinates.
-
-    ``landmarks`` (when available) is 5 (x, y) points — right eye, left eye, nose,
-    right mouth corner, left mouth corner — used later for face alignment.
-    """
-
-    x1: float
-    y1: float
-    x2: float
-    y2: float
-    score: float | None = None
-    landmarks: tuple[tuple[float, float], ...] | None = None
-
-    @property
-    def xyxy(self) -> tuple[float, float, float, float]:
-        return (self.x1, self.y1, self.x2, self.y2)
-
-
-@runtime_checkable
-class FaceDetector(Protocol):
-    """Detect faces in a single BGR image (H x W x 3, uint8)."""
-
-    def detect(self, image: np.ndarray) -> list[FaceDetection]: ...
-
-
-class HaarFaceDetector:
-    """OpenCV Haar-cascade frontal-face detector.
-
-    Zero-dependency stand-in for the plan's SCRFD/YuNet face detector, behind the
-    same ``FaceDetector`` interface. Weak on small, rotated, or non-frontal faces —
-    fine for a quick two-stage test, swap for SCRFD/YuNet for real accuracy.
-    """
-
-    def __init__(
-        self,
-        scale_factor: float = 1.1,
-        min_neighbors: int = 5,
-        min_size: int = 12,
-    ) -> None:
-        import cv2
-
-        self._cv2 = cv2
-        self.cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        )
-        self.scale_factor = scale_factor
-        self.min_neighbors = min_neighbors
-        self.min_size = min_size
-
-    def detect(self, image: np.ndarray) -> list[FaceDetection]:
-        cv2 = self._cv2
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
-        faces = self.cascade.detectMultiScale(
-            gray,
-            scaleFactor=self.scale_factor,
-            minNeighbors=self.min_neighbors,
-            minSize=(self.min_size, self.min_size),
-        )
-        return [
-            FaceDetection(float(x), float(y), float(x + w), float(y + h))
-            for (x, y, w, h) in faces
-        ]
-
-
-class YuNetFaceDetector:
-    """OpenCV YuNet face detector (``cv2.FaceDetectorYN``).
-
-    Lightweight (~230 KB ONNX), Apache-2.0, CPU-fast, and far better than Haar on
-    small/angled faces. Returns 5 facial landmarks. The plan's commercial-clean
-    face detector; same ``FaceDetector`` interface as ``HaarFaceDetector``.
-
-    Model: opencv_zoo ``face_detection_yunet_2023mar.onnx``.
-    """
-
-    def __init__(
-        self,
-        model_path: str = "models/face_detection_yunet_2023mar.onnx",
-        score_threshold: float = 0.6,
-        nms_threshold: float = 0.3,
-        top_k: int = 5000,
-    ) -> None:
-        import cv2
-
-        self._cv2 = cv2
-        self.detector = cv2.FaceDetectorYN.create(
-            str(model_path), "", (320, 320), score_threshold, nms_threshold, top_k
-        )
-
-    def detect(self, image: np.ndarray) -> list[FaceDetection]:
-        h, w = image.shape[:2]
-        if h == 0 or w == 0:
+        Returns one ``list[Detection]`` per input frame, aligned to input order. Ultralytics
+        runs a whole list as a single forward pass with no internal sub-batching, so we chunk
+        to bound VRAM. Far fewer Python-heavy ``predict`` calls than per-frame ``detect``,
+        which is the win for the batched :func:`~faces_cv.pipeline.peek_videos`.
+        """
+        if not frames:
             return []
-        self.detector.setInputSize((w, h))  # must match the image before detect()
-        _, faces = self.detector.detect(image)
-        if faces is None:
-            return []
-        out: list[FaceDetection] = []
-        for f in faces:
-            x, y, fw, fh = f[:4]
-            landmarks = tuple((float(f[4 + 2 * i]), float(f[5 + 2 * i])) for i in range(5))
-            out.append(
-                FaceDetection(
-                    float(x), float(y), float(x + fw), float(y + fh),
-                    score=float(f[14]), landmarks=landmarks,
+        names = self.model.names
+        out: list[list[Detection]] = []
+        for start in range(0, len(frames), max(1, batch_size)):
+            chunk = frames[start : start + max(1, batch_size)]
+            results = self.model.predict(
+                chunk,
+                classes=self.classes,
+                conf=self.conf,
+                device=self.device,
+                verbose=False,
+                **({} if self.imgsz is None else {"imgsz": self.imgsz}),
+            )
+            out.extend(self._boxes_to_detections(r, names) for r in results)
+        return out
+
+    @staticmethod
+    def _boxes_to_detections(result, names) -> list[Detection]:
+        dets: list[Detection] = []
+        for b in result.boxes:
+            x1, y1, x2, y2 = b.xyxy[0].tolist()
+            cls_id = int(b.cls[0])
+            dets.append(
+                Detection(
+                    x1, y1, x2, y2, float(b.conf[0]),
+                    class_id=cls_id, label=names.get(cls_id),
                 )
             )
-        return out
+        return dets
