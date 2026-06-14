@@ -1,18 +1,30 @@
 [project]
-name = "faces"
+name = "argus"
 version = "0.1.0"
-description = "Add your description here"
+description = "On-prem surveillance-footage analysis & understanding (detection, tracking, triage)."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "altair>=5.4.0",
     "jupyter>=1.1.1",
+    "lap>=0.5.12",
     "pi-heif>=1.4.0",
     "surveillance-datasets[hf,torch,yolo]",
 ]
 
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
 [tool.uv.sources]
 surveillance-datasets = { git = "ssh://git@github.com/eiffeltower-bo/surveillance_datasets.git" }
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
 
 [tool.marimo.runtime]
 # Headroom for embedded video output (we downscale displayed videos, but allow margin).
 output_max_bytes = 50_000_000
+# Put the repo root on sys.path so `import argus` resolves for notebooks in examples/
+# (marimo otherwise only adds the notebook's own directory). Launch marimo from the repo root.
+pythonpath = ["."]
