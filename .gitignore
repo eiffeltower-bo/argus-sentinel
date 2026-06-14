@@ -1,0 +1,24 @@
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# marimo session cache
+__marimo__/
+
+# model weights that auto-download (ultralytics fetches yolo*.pt on first use)
+*.pt
+
+# generated artifacts
+out/
+
+# pulled DVR footage + transcodes (large, regenerable)
+dvr_raw/
+dvr_mp4/
+
+# OS
+.DS_Store
+
+# Note: models/face_detection_yunet_2023mar.onnx (~232 KB) IS committed —
+# it has no auto-download path, and the two-stage notebooks need it.
