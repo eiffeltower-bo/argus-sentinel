@@ -6,8 +6,9 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from faces_cv.tracking import ByteTrackTracker, Track
-from faces_cv.pipeline import (
+from argus.core import Track
+from argus.track import ByteTrackTracker
+from argus.pipeline import (
     TrackingResult,
     VideoTracker,
     edge_of,

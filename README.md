@@ -1,25 +1,31 @@
-# faces
+# argus
 
-Prototypes for an on-prem, forensic **surveillance face-ID system**: read recorded
-video → detect people/vehicles → track them → (later) extract + embed faces and search a
-vector index. Full design in [context/implementation-plan.md](context/implementation-plan.md).
+On-prem **surveillance-footage analysis & understanding**: read recorded video and make
+sense of it — detect objects, track them across frames, and triage which clips are worth a
+closer look. Built to extend toward face-ID/re-ID, embeddings, and search (full design in
+[context/implementation-plan.md](context/implementation-plan.md)).
 
-This repo is the **exploration stage**: a small, model-agnostic **detection + tracking
-SDK** (`faces_cv`) plus marimo notebooks that exercise it on real surveillance footage.
+`argus` is a small, model-agnostic, pluggable SDK; the marimo notebooks in `examples/`
+exercise it on real surveillance footage.
 
 ## Layout
 
 ```
-faces_cv/
-  detection.py   Detection + Detector protocol; UltralyticsDetector (YOLO11) backend
-  tracking.py    Track + Tracker protocol; ByteTrackTracker backend; COCO class maps
-  pipeline.py    VideoTracker / track_video / TrackingResult (metrics, render, export)
-examples/
-  01_dvr_person_tracking.py    ByteTrack person tracking on DVR proxies (SDK demo)
-  02_dvr_vehicle_tracking.py   same, for COCO vehicle classes (car/motorcycle/bus/truck)
-tests/             fast unit suite (no GPU/weights/data needed)
-context/implementation-plan.md  the system design
+argus/
+  core/        shared types (Detection, Track) + extension Protocols (Detector, Tracker)
+               + COCO taxonomy — dependency-free foundation
+  detect/      object detection; detect/backends/ultralytics.py (YOLO11)
+  track/       tracking-by-detection; track/backends/bytetrack.py (ByteTrack)
+  pipeline/    orchestration: tracking.py (VideoTracker/track_video/TrackingResult),
+               peek.py (peek_video/peek_videos/PeekResult)
+examples/      marimo notebooks (person tracking, vehicle tracking, folder peek-by-time)
+tests/         fast unit suite (no GPU/weights/data needed)
+context/       architecture.md (module map + how to extend) + implementation-plan.md
 ```
+
+The extension contracts all live in `argus/core` — implement a `Detector`/`Tracker`
+Protocol and drop the file in the matching `*/backends/` folder. See
+[context/architecture.md](context/architecture.md).
 
 ## Setup
 
@@ -33,16 +39,28 @@ auto-downloads on first detector use.
 ## Use the SDK
 
 ```python
-from faces_cv import track_video
+from argus import track_video, peek_videos
 
 result = track_video("clip.mp4", targets=("person", "vehicle"), device="cuda")
 result.metrics()                       # per-track polars DataFrame
 result.to_parquet("tracks.parquet", what="tracks")
 result.render("annotated.mp4")         # annotated H.264 video
+
+peek_videos(clips, targets=("vehicle",), device="cuda")   # fast folder triage
 ```
 
 Both axes are pluggable: any object satisfying the `Detector` (`.detect(frame)`) or
 `Tracker` (`.update(dets, frame)` / `.reset()`) protocol drops into `VideoTracker`.
+
+## Sample scripts
+
+Runnable CLI examples in `examples/` (each takes `--help`):
+
+```bash
+uv run python examples/track_clip.py    clip.mp4 --targets person vehicle --render
+uv run python examples/peek_folder.py   /footage --targets vehicle --workers 8
+uv run python examples/custom_backend.py clip.mp4   # a custom Detector via the protocol
+```
 
 ## Run a notebook
 
@@ -50,7 +68,7 @@ Both axes are pluggable: any object satisfying the `Detector` (`.detect(frame)`)
 uv run marimo edit examples/01_dvr_person_tracking.py
 ```
 
-Run from the **repo root** so `import faces_cv` resolves.
+Run from the **repo root** so `import argus` resolves.
 
 ## Notes
 

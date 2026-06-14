@@ -1,6 +1,6 @@
 """Unit tests for the Detection dataclass (no model needed)."""
 
-from faces_cv.detection import Detection
+from argus.core import Detection
 
 
 def test_detection_positional_defaults():

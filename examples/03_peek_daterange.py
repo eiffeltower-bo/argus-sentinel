@@ -27,7 +27,7 @@ def _(mo):
     interesting clips.
 
     ```python
-    from faces_cv import peek_videos
+    from argus import peek_videos
     peek_videos(clips, targets=("person", "vehicle"), device="cuda", max_workers=8)
     ```
     """)
@@ -41,7 +41,7 @@ def _():
     from datetime import datetime
     from pathlib import Path
 
-    from faces_cv import UltralyticsDetector, peek_videos
+    from argus import UltralyticsDetector, peek_videos
 
     return Path, UltralyticsDetector, datetime, peek_videos, re, time
 

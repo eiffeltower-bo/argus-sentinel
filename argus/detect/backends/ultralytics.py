@@ -1,49 +1,10 @@
-"""Object detection — a model-agnostic interface plus a YOLO implementation.
-
-The pipeline depends on the ``Detector`` protocol, not on any specific model: swap the
-backend by providing another class with the same ``.detect(frame)`` signature (e.g. an
-ONNX/TensorRT detector for speed, or a commercial-clean model later).
-"""
+"""Ultralytics YOLO detector backend (implements the core ``Detector`` protocol)."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
-
 import numpy as np
 
-
-@dataclass(frozen=True)
-class Detection:
-    """A single object detection, in absolute pixel xyxy coordinates.
-
-    ``class_id`` / ``label`` are optional so single-class detectors can emit a bare
-    ``Detection(x1, y1, x2, y2, score)``; multi-class detectors fill them in so
-    downstream tracking can categorise.
-    """
-
-    x1: float
-    y1: float
-    x2: float
-    y2: float
-    score: float
-    class_id: int | None = None
-    label: str | None = None
-
-    @property
-    def xyxy(self) -> tuple[float, float, float, float]:
-        return (self.x1, self.y1, self.x2, self.y2)
-
-
-@runtime_checkable
-class Detector(Protocol):
-    """Detect objects in a single BGR frame (H x W x 3, uint8).
-
-    The model-agnostic contract the tracking pipeline depends on: any object with
-    this ``.detect`` signature is a valid backend, ultralytics or otherwise.
-    """
-
-    def detect(self, frame: np.ndarray) -> list[Detection]: ...
+from ...core import Detection
 
 
 class UltralyticsDetector:
@@ -95,7 +56,7 @@ class UltralyticsDetector:
         Returns one ``list[Detection]`` per input frame, aligned to input order. Ultralytics
         runs a whole list as a single forward pass with no internal sub-batching, so we chunk
         to bound VRAM. Far fewer Python-heavy ``predict`` calls than per-frame ``detect``,
-        which is the win for the batched :func:`~faces_cv.pipeline.peek_videos`.
+        which is the win for the batched ``peek_videos``.
         """
         if not frames:
             return []

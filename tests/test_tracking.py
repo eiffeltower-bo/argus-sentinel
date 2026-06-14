@@ -7,8 +7,9 @@ no model/GPU/weights — so these run in milliseconds.
 import numpy as np
 import pytest
 
-from faces_cv.detection import Detection
-from faces_cv.tracking import ByteTrackTracker, Track, _DetectionsAdapter
+from argus.core import Detection, Track
+from argus.track import ByteTrackTracker
+from argus.track.backends.bytetrack import _DetectionsAdapter
 
 
 def test_track_geometry():

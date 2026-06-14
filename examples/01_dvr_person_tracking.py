@@ -14,14 +14,14 @@ def _():
 @app.cell(hide_code=True)
 def _(mo):
     mo.md("""
-    # 🎯 DVR person tracking — the `faces_cv` SDK
+    # 🎯 DVR person tracking — the `argus` SDK
 
-    A thin demo of the **`faces_cv`** detection + tracking SDK on surveillance proxies.
+    A thin demo of the **`argus`** detection + tracking SDK on surveillance proxies.
     Where the old notebook wired up `model.track(...)` and the per-track bookkeeping by
     hand, the whole pipeline is now one call:
 
     ```python
-    from faces_cv import track_video
+    from argus import track_video
     result = track_video(clip, targets=("person",), device="cuda", max_frames=300)
     ```
 
@@ -50,7 +50,7 @@ def _():
     import altair as alt
     import polars as pl
 
-    from faces_cv import UltralyticsDetector, peek_video, track_video
+    from argus import UltralyticsDetector, peek_video, track_video
 
     return Path, UltralyticsDetector, alt, peek_video, pl, random, time, track_video
 
@@ -102,7 +102,7 @@ def _(mo):
     fast triage to spot which proxies actually contain people.
 
     ```python
-    from faces_cv import peek_video
+    from argus import peek_video
     peek_video(clip, targets=("person",), device="cuda").interesting   # -> True / False
     ```
     """)
@@ -318,7 +318,7 @@ def _(mo):
     `VideoTracker`, which is exactly what `track_video` builds for you:
 
     ```python
-    from faces_cv import VideoTracker, UltralyticsDetector, ByteTrackTracker
+    from argus import VideoTracker, UltralyticsDetector, ByteTrackTracker
 
     detector = UltralyticsDetector(weights="yolo11s.pt", classes=[0], device="cuda")
     result = VideoTracker(detector, ByteTrackTracker(), max_frames=300).run(clip)
