@@ -27,18 +27,28 @@ from .core import (
     TARGET_CLASSES,
     Detection,
     Detector,
+    Embedder,
+    FaceDetection,
+    FaceDetector,
+    Sighting,
+    Store,
     Track,
     Tracker,
 )
 from .detect import UltralyticsDetector
+from .embed import InsightFaceEmbedder
+from .face import InsightFaceDetector, QualityGate, align_chip
 from .pipeline import (
+    IngestResult,
     PeekResult,
     TrackingResult,
     VideoTracker,
+    ingest_video,
     peek_video,
     peek_videos,
     track_video,
 )
+from .store import SqliteStore
 from .track import ByteTrackTracker
 
 __all__ = [
@@ -53,6 +63,19 @@ __all__ = [
     "COCO_LABELS",
     "CATEGORY_BY_CLASS",
     "TARGET_CLASSES",
+    # face stage
+    "FaceDetection",
+    "FaceDetector",
+    "InsightFaceDetector",
+    "align_chip",
+    "QualityGate",
+    # embedding
+    "Embedder",
+    "InsightFaceEmbedder",
+    # storage
+    "Store",
+    "Sighting",
+    "SqliteStore",
     # pipeline
     "VideoTracker",
     "TrackingResult",
@@ -60,4 +83,6 @@ __all__ = [
     "peek_video",
     "peek_videos",
     "PeekResult",
+    "ingest_video",
+    "IngestResult",
 ]

@@ -1,5 +1,6 @@
 """Orchestration: video tracking and fast peek triage, plus their result types."""
 
+from .ingest import IngestResult, ingest_video
 from .peek import PeekResult, peek_video, peek_videos
 from .tracking import TrackingResult, VideoTracker, edge_of, track_color, track_video
 
@@ -12,4 +13,6 @@ __all__ = [
     "PeekResult",
     "peek_video",
     "peek_videos",
+    "ingest_video",
+    "IngestResult",
 ]

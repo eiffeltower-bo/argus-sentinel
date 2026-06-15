@@ -4,7 +4,9 @@ On-prem **surveillance-footage analysis & understanding**: detect → track → 
 video, designed to extend toward face-ID/re-ID, embeddings, and search.
 
 - **Start here:** [context/architecture.md](context/architecture.md) (module map + how to
-  extend) and [context/implementation-plan.md](context/implementation-plan.md) (system design).
+  extend) and [context/face-id-design.md](context/face-id-design.md) (face-ID system design,
+  v0.3 — argus-native). The older [context/implementation-plan.md](context/implementation-plan.md)
+  is **legacy/superseded**; kept only for its scope/compliance/risk analysis.
 - **SDK:** `argus/` is a model-agnostic, subpackaged library. Layers (strict downward deps):
   - `core/` — shared `Detection`/`Track` types, the extension **Protocols** (`Detector`,
     `Tracker`), and the COCO taxonomy. Dependency-free; the place new contracts go.

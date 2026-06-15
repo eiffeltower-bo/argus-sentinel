@@ -1,22 +1,74 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "argus"
 version = "0.1.0"
 description = "On-prem surveillance-footage analysis & understanding (detection, tracking, triage)."
 readme = "README.md"
 requires-python = ">=3.12"
+# Runtime deps declared directly (what `argus` actually imports). Pins mirror uv.lock so the
+# package — and the Docker image — install with no SSH access to private repos. The CPU vs
+# CUDA torch/torchvision wheel is chosen at install time via the wheel index (see Dockerfile),
+# not here, so this stays portable.
 dependencies = [
-    "altair>=5.4.0",
-    "jupyter>=1.1.1",
-    "lap>=0.5.12",
+    "ultralytics==8.4.66",        # YOLO detector backend (also pulls torch/torchvision)
+    "torch==2.12.0",              # pinned; Dockerfile selects the cpu/cuda wheel index
+    "torchvision==0.27.0",        # must match torch's wheel index (cpu vs cuXXX)
+    "opencv-python==4.13.0.92",   # argus imports cv2 directly (pipeline/_video.py, tracking.py)
+    "polars==1.41.2",
+    "lap==0.5.13",
     "pi-heif>=1.4.0",
-    "surveillance-datasets[hf,torch,yolo]",
+    "altair>=5.4.0",
 ]
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
 
+[project.scripts]
+argus = "argus.cli:main"
+
+[project.optional-dependencies]
+# Face-ID detection + embedding backends (insightface). Lazy-imported — NOT needed for
+# `import argus`, the peek/track CLI, or the synthetic test suite. `argus/_onnx.py` selects
+# the ONNX execution provider, so CPU vs GPU differ only by the onnxruntime package:
+#   CPU:  pip install .[face]       /  uv sync --extra face
+#   CUDA: pip install .[face-gpu]   /  uv sync --extra face-gpu
+face = ["insightface>=0.7.3", "onnxruntime>=1.17"]
+# onnxruntime-gpu enables the CUDA execution provider; the nvidia *-cu12 wheels supply the
+# CUDA 12 / cuDNN 9 runtime it dlopens (argus calls onnxruntime.preload_dlls()). The backends
+# fall back to CPU automatically (with a warning) if the CUDA EP can't load.
+face-gpu = [
+    "insightface>=0.7.3",
+    "onnxruntime-gpu>=1.17",
+    "nvidia-cublas-cu12",
+    "nvidia-cudnn-cu12>=9,<10",
+    "nvidia-cufft-cu12",
+    "nvidia-curand-cu12",
+    "nvidia-cuda-runtime-cu12",
+    "nvidia-cuda-nvrtc-cu12",
+]
+# Vector store for persisted face sightings.
+store = ["sqlite-vec>=0.1.6"]
+# Opt-in sample-data fetching (private repo, needs SSH). Not required to run argus.
+datasets = ["surveillance-datasets[hf,torch,yolo]"]
+# Opt-in notebook authoring (marimo examples).
+notebooks = ["jupyter>=1.1.1"]
+
 [tool.uv.sources]
 surveillance-datasets = { git = "ssh://git@github.com/eiffeltower-bo/surveillance_datasets.git" }
+# Default local-dev resolution uses CPU torch wheels — always importable, no CUDA libs needed,
+# and it's what the synthetic test suite (CPU-only) wants. GPU is opt-in: the CUDA Docker image
+# overrides the index at build time (uv pip install --index-url .../cu126), and a local GPU dev
+# can do the same. Only applies to `uv sync`/lock, not the `uv pip` interface used in Docker.
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
