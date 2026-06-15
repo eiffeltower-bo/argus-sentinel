@@ -56,7 +56,6 @@ class UltralyticsDetector:
             verbose=False,
             **({} if self.imgsz is None else {"imgsz": self.imgsz}),
         )
-        print(f"results.class_ids: {[r.cls[0] for r in results]}")
         names = self.model.names
         dets: list[Detection] = []
         for r in results:
