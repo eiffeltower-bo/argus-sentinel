@@ -126,6 +126,19 @@ docker compose exec dev python -c "import torch; print(torch.cuda.is_available()
 With GPU torch present, `device=None` (the CLI default) auto-selects `cuda:0`. The GPU
 reservation is enabled in `docker-compose.yml`; remove its `deploy:` block on CPU-only hosts.
 
+## MCP server
+
+Expose the triage/track workflow as tools an LLM agent can call (`list_clips`, `peek_folder`,
+`peek_clip`, `track_clip`) over HTTP:
+
+```bash
+uv run argus-mcp --port 8000                 # local
+docker compose up -d mcp                     # or containerized (mcp-gpu for GPU)
+```
+
+Step-by-step tutorial (local + Docker, a test client, and connecting Claude Code):
+[context/mcp-server.md](context/mcp-server.md).
+
 ## Notes
 
 - Displayed videos are H.264 and downscaled to 480p so they play inline; **detection
