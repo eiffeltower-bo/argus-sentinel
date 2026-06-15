@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # make `import arg
 
 import numpy as np
 
-from argus import ByteTrackTracker, UltralyticsDetector, VideoTracker
+from argus import ByteTrackTracker, OpenVocabularyDetector, VideoTracker
 from argus.core import Detection, Detector
 
 
@@ -41,18 +41,19 @@ class MinConfidence:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("video", type=Path, help="path to a video clip")
+    ap.add_argument("prompt", help="object description to detect")
     ap.add_argument("--device", default=None, help="'cuda', 'cpu', ... (default: auto)")
     ap.add_argument("--max-frames", type=int, default=120)
-    ap.add_argument("--min-score", type=float, default=0.5)
+    ap.add_argument("--min-score", type=float, default=0.25)
     args = ap.parse_args()
 
-    base = UltralyticsDetector(weights="yolo11s.pt", classes=[0, 2, 3, 5, 7], device=args.device)
+    base = OpenVocabularyDetector(weights="yolov8s-worldv2.pt", prompt=args.prompt, device=args.device)
     detector = MinConfidence(base, min_score=args.min_score)   # <- custom backend, drops in freely
-    tracker = ByteTrackTracker()
+    tracker = ByteTrackTracker(labels=base.model.names)  # <- standard ByteTrack, but with labels from the detector's vocab
 
     result = VideoTracker(detector, tracker, max_frames=args.max_frames).run(args.video)
     print(f"{args.video.name}: {len(result.track_ids)} tracks (conf >= {args.min_score})")
-    print(result.metrics().select("id", "type", "n_frames", "avg_conf"))
+    print(result.metrics().select("id", "type", "first_s", "last_s", "n_frames", "avg_conf"))
 
 
 if __name__ == "__main__":
