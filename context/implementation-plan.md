@@ -1,6 +1,13 @@
 # Surveillance Face‑ID & Re‑ID System — Implementation Plan
 
-**Status:** Draft for review · v0.2 · 2026-06-13
+> ⚠️ **LEGACY (superseded 2026-06-14).** This v0.2 plan predates the `argus` modularization
+> and describes a *separate* `faceid` package backed by Postgres+pgvector. The current
+> design is **[face-id-design.md](face-id-design.md)** (v0.3, argus-native: face-ID extends
+> `argus`, SQLite+sqlite-vec store, face-detect on person crops). Kept for history and for
+> the scope/compliance/risk/SDK-surface analysis (§1, §6, §8–§9, §12) that v0.3 still
+> defers to. **Do not implement from this doc** — start from v0.3.
+
+**Status:** Legacy / superseded · v0.2 · 2026-06-13
 **Owner:** Jose Laruta
 
 > A forensic, on‑premise computer‑vision system that reads recorded surveillance video, detects

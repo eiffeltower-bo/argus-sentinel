@@ -1,0 +1,37 @@
+# Development container for argus. Builds the `dev` image (all deps + an editable install)
+# and bind-mounts the working directory over /app, so edits on the host reflect immediately
+# inside the container — no rebuild needed for code changes.
+#
+#   docker compose up -d dev            # build + start (first run installs torch etc.)
+#   docker compose exec dev bash        # shell inside; run argus / pytest here
+#   docker compose exec dev pytest -q
+#   docker compose exec dev argus peek /data --json
+#   docker compose down                 # stop
+#
+# CPU by default. For local GPU dev, build with the CUDA torch index and enable the GPU
+# reservation below (needs the NVIDIA Container Toolkit on the host).
+services:
+  dev:
+    build:
+      context: .
+      target: dev
+      # GPU: args: { TORCH_INDEX: https://download.pytorch.org/whl/cu126, EXTRAS: "[face-gpu]" }
+    image: argus:dev
+    working_dir: /app
+    volumes:
+      - .:/app                     # live source (incl. weights); editable install points here
+      - argus-uv-cache:/root/.cache/uv
+    # Mount footage read-only for `argus peek/track /data/...` (create ./data or repoint).
+    #  - ./data:/data:ro
+    command: sleep infinity
+    # GPU dev (uncomment with a CUDA build above):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  argus-uv-cache:
