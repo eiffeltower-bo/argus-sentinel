@@ -1,5 +1,8 @@
 # Python / uv
 .venv/
+
+# local docker compose config (machine-specific paths: ARGUS_DATA, TORCH_INDEX)
+.env
 __pycache__/
 *.pyc
 *.pyo
