@@ -1,0 +1,20 @@
+# Keep the build context small. NOTE: *.pt weights are intentionally NOT ignored — they are
+# gitignored but must enter the build context so the Dockerfile can bake them.
+.git
+.gitignore
+.venv
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+__marimo__/
+out/
+dvr_raw/
+dvr_mp4/
+examples/
+context/
+*.md
+!README.md
+Dockerfile
+.dockerignore
+Makefile
