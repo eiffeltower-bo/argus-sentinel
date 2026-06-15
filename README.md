@@ -111,8 +111,20 @@ docker compose down                                   # stop
 ```
 
 `--render` with no path writes `out/<name>_tracked.mp4` in the repo root (bind-mounted, so it
-appears on the host). CPU by default; uncomment the CUDA build args + GPU reservation in
-`docker-compose.yml` for local GPU work (needs the NVIDIA Container Toolkit).
+appears on the host).
+
+CPU by default. For local GPU work (needs the NVIDIA Container Toolkit), **rebuild** the image
+with the CUDA torch index — the bind mount alone doesn't switch torch, so detection silently
+stays on CPU until the image is rebuilt:
+
+```bash
+TORCH_INDEX=https://download.pytorch.org/whl/cu126 docker compose build dev
+docker compose up -d dev
+docker compose exec dev python -c "import torch; print(torch.cuda.is_available())"   # -> True
+```
+
+With GPU torch present, `device=None` (the CLI default) auto-selects `cuda:0`. The GPU
+reservation is enabled in `docker-compose.yml`; remove its `deploy:` block on CPU-only hosts.
 
 ## Notes
 
