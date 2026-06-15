@@ -21,17 +21,19 @@ services:
     volumes:
       - .:/app                     # live source (incl. weights); editable install points here
       - argus-uv-cache:/root/.cache/uv
-    # Mount footage read-only for `argus peek/track /data/...` (create ./data or repoint).
-    #  - ./data:/data:ro
+      # Footage, read-only, at /data. Point it at your host folder:
+      #   ARGUS_DATA=/home/pepe/data docker compose up -d dev
+      # then: argus track /data/shoplifting_dataset/normal/normal-10.mp4 --render
+      - ${ARGUS_DATA:-./data}:/data:ro
     command: sleep infinity
     # GPU dev (uncomment with a CUDA build above):
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
 volumes:
   argus-uv-cache:

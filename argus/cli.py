@@ -67,7 +67,8 @@ def _track(args: argparse.Namespace) -> int:
     )
     rendered = None
     if args.render is not None:
-        rendered = str(result.render(args.render))
+        out = Path(args.render) if args.render else Path("out") / f"{args.video.stem}_tracked.mp4"
+        rendered = str(result.render(out))
 
     if args.json:
         print(json.dumps({
@@ -102,8 +103,9 @@ def main(argv: list[str] | None = None) -> int:
     p_track = sub.add_parser("track", help="detect + track one clip")
     p_track.add_argument("video", type=Path, help="path to a video clip")
     p_track.add_argument("--max-frames", type=int, default=None, help="cap frames processed")
-    p_track.add_argument("--render", type=Path, default=None,
-                         help="also write an annotated H.264 clip to this path")
+    p_track.add_argument("--render", nargs="?", const="", default=None,
+                         help="also write an annotated H.264 clip; PATH optional "
+                              "(default: out/<name>_tracked.mp4)")
     _add_common(p_track)
     p_track.set_defaults(func=_track)
 
