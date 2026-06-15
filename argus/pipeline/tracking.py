@@ -285,6 +285,7 @@ def track_video(
     max_frames: int | None = None,
     stride: int = 1,
     peek_first: bool = False,
+    detector: Detector | None = None,
 ) -> TrackingResult:
     """One-line detection + tracking on a video path.
 
@@ -299,13 +300,13 @@ def track_video(
     if peek_first:
         from .peek import peek_video
 
-        peek = peek_video(video_path, targets=targets, device=device)
+        peek = peek_video(video_path, targets=targets, device=device, detector=detector)
         if not peek.interesting:
             return TrackingResult(
                 video_path=Path(video_path),
                 fps=peek.fps, width=peek.width, height=peek.height, frames=[],
             )
-    detector = UltralyticsDetector(
+    detector = detector or UltralyticsDetector(
         weights=weights, classes=classes_for(targets), conf=conf, device=device
     )
     tracker = tracker or ByteTrackTracker()
