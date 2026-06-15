@@ -28,6 +28,7 @@ class Detection:
     score: float
     class_id: int | None = None
     label: str | None = None
+    category: str | None = None
 
     @property
     def xyxy(self) -> tuple[float, float, float, float]:

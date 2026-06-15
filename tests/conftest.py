@@ -19,6 +19,10 @@ class ScriptedDetector:
         self._per_frame = list(per_frame)
         self._i = 0
 
+    @property
+    def targets(self) -> tuple[str, ...]:
+        return ()
+
     def detect(self, frame: np.ndarray) -> list[Detection]:
         dets = self._per_frame[self._i] if self._i < len(self._per_frame) else []
         self._i += 1
