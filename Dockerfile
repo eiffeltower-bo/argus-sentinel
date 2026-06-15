@@ -72,3 +72,16 @@ RUN --mount=type=cache,target=/root/.cache/uv uv pip install pytest
 COPY tests ./tests
 ENTRYPOINT []
 CMD ["pytest", "-q"]
+
+########## dev — full dev env; pair with docker-compose's bind mount over /app ##########
+# argus is re-installed EDITABLE so source changes in the bind-mounted /app reflect live
+# (the `argus` console script and `import argus` both resolve to /app/argus). Heavy deps stay
+# baked in /opt/venv. See docker-compose.yml + the README "Develop in a container" section.
+FROM builder AS dev
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install pytest && uv pip install -e .
+# Keep ultralytics' settings out of the mounted repo.
+ENV YOLO_CONFIG_DIR=/tmp/ultralytics \
+    MPLCONFIGDIR=/tmp/mpl
+ENTRYPOINT []
+CMD ["sleep", "infinity"]
