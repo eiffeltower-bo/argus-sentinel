@@ -102,15 +102,17 @@ working directory over `/app`, so edits on the host reflect immediately inside (
 installed editable — no rebuild for code changes):
 
 ```bash
-docker compose up -d dev            # build + start (first run installs torch etc.)
-docker compose exec dev bash        # shell in; then run argus / pytest / python
+# Point ARGUS_DATA at a host footage folder; it's mounted read-only at /data.
+ARGUS_DATA=/home/pepe/data docker compose up -d dev   # build + start (first run installs torch etc.)
+docker compose exec dev bash                          # shell in; then run argus / pytest / python
 docker compose exec dev pytest -q
-docker compose exec dev argus track clip.mp4 --render out.mp4 --json
-docker compose down                 # stop
+docker compose exec dev argus track /data/shoplifting_dataset/normal/normal-10.mp4 --render --json
+docker compose down                                   # stop
 ```
 
-CPU by default; uncomment the CUDA build args + GPU reservation in `docker-compose.yml` for
-local GPU work (needs the NVIDIA Container Toolkit).
+`--render` with no path writes `out/<name>_tracked.mp4` in the repo root (bind-mounted, so it
+appears on the host). CPU by default; uncomment the CUDA build args + GPU reservation in
+`docker-compose.yml` for local GPU work (needs the NVIDIA Container Toolkit).
 
 ## Notes
 
