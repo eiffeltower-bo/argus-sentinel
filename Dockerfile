@@ -45,7 +45,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install torch==2.12.0 torchvision==0.27.0 --index-url "${TORCH_INDEX}" \
  && uv pip install ".${EXTRAS}"
 
-########## runtime — slim image with just the venv, weights, and ffmpeg ##########
+########## runtime — slim image with just the venv and ffmpeg ##########
 # base supplies ffmpeg (libx264) for TrackingResult.render() and libgl1/libglib2.0-0 for cv2.
 FROM base AS runtime
 
@@ -57,8 +57,9 @@ ENV VIRTUAL_ENV=/opt/venv \
 COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /app
-# Bake weights so detection is air-gapped; WORKDIR=/app so the bare-filename lookup resolves.
-COPY yolo11n.pt yolo11s.pt ./
+# Weights are NOT baked: ultralytics auto-downloads yolo11n/s.pt to the writable WORKDIR (/app)
+# on first detector use, where the bare-filename lookup resolves. Smaller image; needs network
+# on first call (mount a volume at /app to cache them across container recreations if desired).
 
 RUN useradd --create-home --uid 10001 argus && chown -R argus:argus /app
 USER argus
@@ -85,3 +86,17 @@ ENV YOLO_CONFIG_DIR=/tmp/ultralytics \
     MPLCONFIGDIR=/tmp/mpl
 ENTRYPOINT []
 CMD ["sleep", "infinity"]
+
+########## mcp — runtime + the MCP server (streamable HTTP) ##########
+# Adds only the MCP server stack on top of runtime (baked weights, ffmpeg, non-root user,
+# WORKDIR /app, YOLO_CONFIG_DIR=/app). The `argus-mcp` console script already ships in the
+# runtime venv; we just add the `mcp` package (runtime has no uv, so use the venv's pip).
+# Inherits TORCH_INDEX/EXTRAS via runtime->builder, so a CUDA build serves on the GPU.
+# See docker-compose.yml `mcp` / `mcp-gpu` services.
+FROM runtime AS mcp
+USER root
+RUN --mount=type=cache,target=/root/.cache/pip pip install "mcp>=1.9"
+USER argus
+EXPOSE 8000
+ENTRYPOINT ["argus-mcp"]
+CMD ["--host", "0.0.0.0", "--port", "8000"]

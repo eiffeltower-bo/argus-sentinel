@@ -44,5 +44,37 @@ services:
               count: all
               capabilities: [gpu]
 
+  # MCP server over HTTP (tools: list_clips, peek_folder, peek_clip, track_clip) at :8000/mcp.
+  #   docker compose up -d mcp        # CPU
+  # Footage is mounted read-only at /data; renders land in ./out on the host (note: the
+  # container runs as uid 10001, so `chmod 777 out` once if render writes hit a permission error).
+  mcp:
+    build:
+      context: .
+      target: mcp
+      args:
+        TORCH_INDEX: ${TORCH_INDEX:-https://download.pytorch.org/whl/cpu}
+        EXTRAS: ${EXTRAS:-}
+    image: argus:mcp
+    ports:
+      - "${ARGUS_MCP_PORT:-8000}:${ARGUS_MCP_PORT:-8000}"
+    volumes:
+      - ${ARGUS_DATA:-./data}:/data:ro
+      - ./out:/app/out
+    command: ["--host", "${ARGUS_MCP_HOST:-0.0.0.0}", "--port", "${ARGUS_MCP_PORT:-8000}"]
+
+  # GPU variant. Build with: TORCH_INDEX=https://download.pytorch.org/whl/cu126 docker compose build mcp-gpu
+  mcp-gpu:
+    extends:
+      service: mcp
+    image: argus:mcp-gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
 volumes:
   argus-uv-cache:
