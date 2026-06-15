@@ -12,11 +12,11 @@ from argus.pipeline import PeekResult, peek_video, peek_videos
 
 
 def _person(score=0.9):
-    return Detection(10, 20, 60, 180, score, class_id=0, label="person")
+    return Detection(10, 20, 60, 180, score, class_id=0, label="person", category="person")
 
 
 def _car(score=0.9):
-    return Detection(10, 20, 120, 90, score, class_id=2, label="car")
+    return Detection(10, 20, 120, 90, score, class_id=2, label="car", category="vehicle")
 
 
 class _AlwaysPerson:
@@ -24,6 +24,10 @@ class _AlwaysPerson:
 
     No ``detect_batch`` -> exercises the per-frame fallback in ``peek_videos``.
     """
+
+    @property
+    def targets(self) -> tuple[str, ...]:
+        return ("person",)
 
     def detect(self, frame):
         return [_person()]
@@ -42,6 +46,10 @@ class _PersonIfBright:
     ``detect`` and ``detect_batch`` agree, so batched results must equal serial ones —
     which only holds if ``detect_batch`` preserves per-frame order across chunks.
     """
+
+    @property
+    def targets(self) -> tuple[str, ...]:
+        return ("person",)
 
     def detect(self, frame):
         return [_person()] if frame.mean() >= 128 else []

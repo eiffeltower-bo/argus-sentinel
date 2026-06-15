@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from ...core import Detection
+from ...core import CATEGORY_BY_CLASS, Detection
 
 
-def _boxes_to_detections(result, names) -> list[Detection]:
+def _boxes_to_detections(result, names, categories: dict[int, str] | None = None) -> list[Detection]:
     dets: list[Detection] = []
     for b in result.boxes:
         x1, y1, x2, y2 = b.xyxy[0].tolist()
@@ -16,6 +16,7 @@ def _boxes_to_detections(result, names) -> list[Detection]:
             Detection(
                 x1, y1, x2, y2, float(b.conf[0]),
                 class_id=cls_id, label=names.get(cls_id),
+                category=categories.get(cls_id) if categories else None,
             )
         )
     return dets
@@ -24,9 +25,10 @@ def _boxes_to_detections(result, names) -> list[Detection]:
 class UltralyticsDetector:
     """Multi-class ultralytics YOLO detector behind the ``Detector`` protocol.
 
-    Each ``Detection`` carries its ``class_id`` and ``label`` (from ``model.names``) so
-    the tracker can tag tracks by category. ``classes`` restricts to a COCO subset (e.g.
-    ``[0]`` for person, ``[2, 3, 5, 7]`` for vehicles); ``classes=None`` keeps every class.
+    Each ``Detection`` carries its ``class_id``, ``label`` (from ``model.names``), and
+    ``category`` (coarse COCO roll-up via ``CATEGORY_BY_CLASS``) so the tracker can tag
+    tracks by category. ``classes`` restricts to a COCO subset (e.g. ``[0]`` for person,
+    ``[2, 3, 5, 7]`` for vehicles); ``classes=None`` keeps every class.
     """
 
     def __init__(
@@ -43,9 +45,18 @@ class UltralyticsDetector:
         self.classes = classes
         self.conf = conf
         self.device = device
-        # Inference resolution (square). None -> model default (640). Lower (e.g. 320) is
-        # faster but misses smaller objects — used by the fast `peek_video` pre-scan.
         self.imgsz = imgsz
+
+    @property
+    def targets(self) -> tuple[str, ...]:
+        if self.classes is None:
+            return ()
+        cats: set[str] = set()
+        for c in self.classes:
+            cat = CATEGORY_BY_CLASS.get(c)
+            if cat:
+                cats.add(cat)
+        return tuple(sorted(cats))
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         results = self.model.predict(
@@ -59,7 +70,7 @@ class UltralyticsDetector:
         names = self.model.names
         dets: list[Detection] = []
         for r in results:
-            dets.extend(_boxes_to_detections(r, names))
+            dets.extend(_boxes_to_detections(r, names, CATEGORY_BY_CLASS))
         return dets
 
     def detect_batch(
@@ -86,36 +97,41 @@ class UltralyticsDetector:
                 verbose=False,
                 **({} if self.imgsz is None else {"imgsz": self.imgsz}),
             )
-            out.extend(_boxes_to_detections(r, names) for r in results)
+            out.extend(_boxes_to_detections(r, names, CATEGORY_BY_CLASS) for r in results)
         return out
 
 
 class OpenVocabularyDetector:
     """Open-vocabulary YOLO-World detector behind the ``Detector`` protocol.
 
-    Detects arbitrary object categories from a text prompt rather than a fixed taxonomy.
+    Detects a single object category from a text prompt rather than a fixed taxonomy.
+    Every ``Detection`` has ``class_id=0``, ``label`` set to the prompt, and ``category``
+    set to the prompt.
 
-    Each ``Detection`` carries its ``class_id`` and ``label``, where ``class_id`` is
-    the index into ``classes`` and ``label`` is the corresponding prompt string.
+    Pass the detector to ``peek_video`` / ``track_video`` via the ``detector=`` argument.
     """
 
     def __init__(
         self,
+        prompt: str,
         weights: str = "yolov8s-worldv2.pt",
-        prompt: str | None = None,
         conf: float = 0.25,
         device: str | None = None,
         imgsz: int | None = None,
     ) -> None:
         from ultralytics import YOLOWorld  # lazy: heavy import only when used
 
+        self.prompt = prompt
         self.model = YOLOWorld(weights)
         self.model.set_classes([prompt])
         self.model.to(device)
         self.device = device
-        self.prompt = prompt
         self.conf = conf
         self.imgsz = imgsz
+
+    @property
+    def targets(self) -> tuple[str, ...]:
+        return (self.prompt,)
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         results = self.model.predict(
@@ -128,7 +144,7 @@ class OpenVocabularyDetector:
         names = self.model.names
         dets: list[Detection] = []
         for r in results:
-            dets.extend(_boxes_to_detections(r, names))
+            dets.extend(_boxes_to_detections(r, names, {0: self.prompt}))
         return dets
 
     def detect_batch(
@@ -141,6 +157,7 @@ class OpenVocabularyDetector:
         if not frames:
             return []
         names = self.model.names
+        categories = {0: self.prompt}
         out: list[list[Detection]] = []
         for start in range(0, len(frames), max(1, batch_size)):
             chunk = frames[start : start + max(1, batch_size)]
@@ -151,5 +168,5 @@ class OpenVocabularyDetector:
                 verbose=False,
                 **({} if self.imgsz is None else {"imgsz": self.imgsz}),
             )
-            out.extend(_boxes_to_detections(r, names) for r in results)
+            out.extend(_boxes_to_detections(r, names, categories) for r in results)
         return out
