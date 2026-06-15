@@ -1,10 +1,24 @@
-"""Ultralytics YOLO detector backend (implements the core ``Detector`` protocol)."""
+"""Ultralytics YOLO detector backends (implement the core ``Detector`` protocol)."""
 
 from __future__ import annotations
 
 import numpy as np
 
 from ...core import Detection
+
+
+def _boxes_to_detections(result, names) -> list[Detection]:
+    dets: list[Detection] = []
+    for b in result.boxes:
+        x1, y1, x2, y2 = b.xyxy[0].tolist()
+        cls_id = int(b.cls[0])
+        dets.append(
+            Detection(
+                x1, y1, x2, y2, float(b.conf[0]),
+                class_id=cls_id, label=names.get(cls_id),
+            )
+        )
+    return dets
 
 
 class UltralyticsDetector:
@@ -42,10 +56,11 @@ class UltralyticsDetector:
             verbose=False,
             **({} if self.imgsz is None else {"imgsz": self.imgsz}),
         )
+        print(f"results.class_ids: {[r.cls[0] for r in results]}")
         names = self.model.names
         dets: list[Detection] = []
         for r in results:
-            dets.extend(self._boxes_to_detections(r, names))
+            dets.extend(_boxes_to_detections(r, names))
         return dets
 
     def detect_batch(
@@ -72,19 +87,70 @@ class UltralyticsDetector:
                 verbose=False,
                 **({} if self.imgsz is None else {"imgsz": self.imgsz}),
             )
-            out.extend(self._boxes_to_detections(r, names) for r in results)
+            out.extend(_boxes_to_detections(r, names) for r in results)
         return out
 
-    @staticmethod
-    def _boxes_to_detections(result, names) -> list[Detection]:
+
+class OpenVocabularyDetector:
+    """Open-vocabulary YOLO-World detector behind the ``Detector`` protocol.
+
+    Detects arbitrary object categories from a text prompt rather than a fixed taxonomy.
+
+    Each ``Detection`` carries its ``class_id`` and ``label``, where ``class_id`` is
+    the index into ``classes`` and ``label`` is the corresponding prompt string.
+    """
+
+    def __init__(
+        self,
+        weights: str = "yolov8s-worldv2.pt",
+        prompt: str | None = None,
+        conf: float = 0.25,
+        device: str | None = None,
+        imgsz: int | None = None,
+    ) -> None:
+        from ultralytics import YOLOWorld  # lazy: heavy import only when used
+
+        self.model = YOLOWorld(weights)
+        self.model.set_classes([prompt])
+        self.model.to(device)
+        self.device = device
+        self.prompt = prompt
+        self.conf = conf
+        self.imgsz = imgsz
+
+    def detect(self, frame: np.ndarray) -> list[Detection]:
+        results = self.model.predict(
+            frame,
+            conf=self.conf,
+            device=self.device,
+            verbose=False,
+            **({} if self.imgsz is None else {"imgsz": self.imgsz}),
+        )
+        names = self.model.names
         dets: list[Detection] = []
-        for b in result.boxes:
-            x1, y1, x2, y2 = b.xyxy[0].tolist()
-            cls_id = int(b.cls[0])
-            dets.append(
-                Detection(
-                    x1, y1, x2, y2, float(b.conf[0]),
-                    class_id=cls_id, label=names.get(cls_id),
-                )
-            )
+        for r in results:
+            dets.extend(_boxes_to_detections(r, names))
         return dets
+
+    def detect_batch(
+        self, frames: list[np.ndarray], *, batch_size: int = 32
+    ) -> list[list[Detection]]:
+        """Detect on many frames at once — one ``predict`` per ``batch_size`` chunk.
+
+        Returns one ``list[Detection]`` per input frame, aligned to input order.
+        """
+        if not frames:
+            return []
+        names = self.model.names
+        out: list[list[Detection]] = []
+        for start in range(0, len(frames), max(1, batch_size)):
+            chunk = frames[start : start + max(1, batch_size)]
+            results = self.model.predict(
+                chunk,
+                conf=self.conf,
+                device=self.device,
+                verbose=False,
+                **({} if self.imgsz is None else {"imgsz": self.imgsz}),
+            )
+            out.extend(_boxes_to_detections(r, names) for r in results)
+        return out

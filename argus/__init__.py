@@ -35,7 +35,7 @@ from .core import (
     Track,
     Tracker,
 )
-from .detect import UltralyticsDetector
+from .detect import OpenVocabularyDetector, UltralyticsDetector
 from .embed import InsightFaceEmbedder
 from .face import InsightFaceDetector, QualityGate, align_chip
 from .pipeline import (
@@ -56,6 +56,7 @@ __all__ = [
     "Detection",
     "Detector",
     "UltralyticsDetector",
+    "OpenVocabularyDetector",
     # tracking
     "Track",
     "Tracker",
