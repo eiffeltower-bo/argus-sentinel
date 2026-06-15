@@ -3,7 +3,7 @@
 On-prem **surveillance-footage analysis & understanding**: read recorded video and make
 sense of it — detect objects, track them across frames, and triage which clips are worth a
 closer look. Built to extend toward face-ID/re-ID, embeddings, and search (full design in
-[context/implementation-plan.md](context/implementation-plan.md)).
+[context/face-id-design.md](context/face-id-design.md)).
 
 `argus` is a small, model-agnostic, pluggable SDK; the marimo notebooks in `examples/`
 exercise it on real surveillance footage.
@@ -20,7 +20,7 @@ argus/
                peek.py (peek_video/peek_videos/PeekResult)
 examples/      marimo notebooks (person tracking, vehicle tracking, folder peek-by-time)
 tests/         fast unit suite (no GPU/weights/data needed)
-context/       architecture.md (module map + how to extend) + implementation-plan.md
+context/       architecture.md (module map + how to extend) + face-id-design.md (v0.3)
 ```
 
 The extension contracts all live in `argus/core` — implement a `Detector`/`Tracker`
