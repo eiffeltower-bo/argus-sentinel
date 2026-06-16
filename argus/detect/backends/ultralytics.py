@@ -104,16 +104,16 @@ class UltralyticsDetector:
 class OpenVocabularyDetector:
     """Open-vocabulary YOLO-World detector behind the ``Detector`` protocol.
 
-    Detects a single object category from a text prompt rather than a fixed taxonomy.
-    Every ``Detection`` has ``class_id=0``, ``label`` set to the prompt, and ``category``
-    set to the prompt.
+    Detects one or more object categories from free-text prompts rather than a fixed taxonomy.
+    ``prompt`` is a single class (``"forklift"``) or a list (``["forklift", "hard hat"]``); each
+    ``Detection``'s ``label``/``category`` is the matched prompt.
 
     Pass the detector to ``peek_video`` / ``track_video`` via the ``detector=`` argument.
     """
 
     def __init__(
         self,
-        prompt: str,
+        prompt: str | list[str],
         weights: str = "yolov8s-worldv2.pt",
         conf: float = 0.25,
         device: str | None = None,
@@ -121,17 +121,18 @@ class OpenVocabularyDetector:
     ) -> None:
         from ultralytics import YOLOWorld  # lazy: heavy import only when used
 
-        self.prompt = prompt
+        self.prompts = [prompt] if isinstance(prompt, str) else list(prompt)
         self.model = YOLOWorld(weights)
-        self.model.set_classes([prompt])
+        self.model.set_classes(self.prompts)
         self.model.to(device)
         self.device = device
         self.conf = conf
         self.imgsz = imgsz
+        self._categories = {i: p for i, p in enumerate(self.prompts)}
 
     @property
     def targets(self) -> tuple[str, ...]:
-        return (self.prompt,)
+        return tuple(self.prompts)
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         results = self.model.predict(
@@ -144,7 +145,7 @@ class OpenVocabularyDetector:
         names = self.model.names
         dets: list[Detection] = []
         for r in results:
-            dets.extend(_boxes_to_detections(r, names, {0: self.prompt}))
+            dets.extend(_boxes_to_detections(r, names, self._categories))
         return dets
 
     def detect_batch(
@@ -157,7 +158,7 @@ class OpenVocabularyDetector:
         if not frames:
             return []
         names = self.model.names
-        categories = {0: self.prompt}
+        categories = self._categories
         out: list[list[Detection]] = []
         for start in range(0, len(frames), max(1, batch_size)):
             chunk = frames[start : start + max(1, batch_size)]

@@ -2,12 +2,13 @@
 
 Subcommands mirror the public functions:
 
-    argus peek  FOLDER  [--targets ... | --prompt TEXT] [--glob '*.mp4'] [--device cuda] [--workers N] [--json]
-    argus track VIDEO   [--targets ... | --prompt TEXT] [--device cuda] [--max-frames N] [--render OUT] [--json]
+    argus peek  FOLDER  [--targets ... | --prompt TEXT...] [--glob '*.mp4'] [--device cuda] [--workers N] [--json]
+    argus track VIDEO   [--targets ... | --prompt TEXT...] [--device cuda] [--max-frames N] [--render OUT] [--json]
     argus audio CLIP    [--model M] [--overlap S] [--segment S] [--labels ...] [--device cuda] [--json]
 
 ``--prompt`` swaps the fixed COCO detector for the open-vocabulary YOLO-World detector
-(detect an arbitrary text class, e.g. ``--prompt "forklift"``), overriding ``--targets``.
+(detect one or more free-text classes, e.g. ``--prompt forklift "hard hat"``), overriding
+``--targets``.
 
 It is a pure dispatch layer: it imports only the cheap re-exports from ``argus`` (heavy libs
 stay lazy inside the backends) and adds no logic of its own, so a future FastAPI/MCP server can
@@ -31,8 +32,8 @@ def _add_common(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--targets", nargs="+", default=list(_TARGETS), choices=list(_TARGETS),
                     help="COCO class groups that count as interesting")
     ap.add_argument("--device", default=None, help="'cuda', 'cpu', ... (default: auto-detect)")
-    ap.add_argument("--prompt", default=None,
-                    help="open-vocabulary text class (YOLO-World); overrides --targets")
+    ap.add_argument("--prompt", nargs="+", default=None,
+                    help="open-vocabulary text class(es) (YOLO-World); overrides --targets")
     ap.add_argument("--json", action="store_true", help="emit one JSON object to stdout")
 
 
