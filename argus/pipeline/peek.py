@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..core import CATEGORY_BY_CLASS, Detector, classes_for
+from ..core import Detector, classes_for
 from ..detect import UltralyticsDetector
 from ._video import _sample_frames
 
@@ -41,13 +41,12 @@ class PeekResult:
         return f"{verdict} · {by_cat} in {self.frames_with_hits}/{self.n_sampled} frames"
 
 
-def _tally(detections, targets: tuple[str, ...], counts: dict[str, int]) -> int:
+def _tally(detections, counts: dict[str, int]) -> int:
     """Add per-category detection counts; return 1 if the frame hit a target, else 0."""
     hit = 0
     for d in detections:
-        category = CATEGORY_BY_CLASS.get(d.class_id) if d.class_id is not None else None
-        if category in counts:
-            counts[category] += 1
+        if d.category is not None and d.category in counts:
+            counts[d.category] += 1
             hit = 1
     return hit
 
@@ -68,7 +67,7 @@ def _detect_many(detector: Detector, frames: list, batch_size: int) -> list[list
 def peek_video(
     video_path,
     *,
-    targets: tuple[str, ...] = ("person", "vehicle"),
+    targets: tuple[str, ...] | None = None,
     weights: str = "yolo11n.pt",
     conf: float = 0.35,
     imgsz: int = 320,
@@ -83,6 +82,10 @@ def peek_video(
     fast model (``yolo11n``) at reduced inference resolution (``imgsz=320``). Pass a custom
     ``detector`` to plug in another backend (``weights``/``conf``/``imgsz`` are then ignored).
 
+    ``targets`` specify which detection categories to count. When omitted, they are derived
+    from ``detector.targets``; if no detector is supplied either, defaults to ``("person",
+    "vehicle")``.
+
     A frame "hits" if it has at least one detection in a target category; the clip is
     ``interesting`` once ``min_hits`` sampled frames hit. ``counts`` totals detections per
     category across all sampled frames.
@@ -91,19 +94,22 @@ def peek_video(
 
     video_path = Path(video_path)
     if detector is None:
+        _targets = targets if targets is not None else ("person", "vehicle")
         detector = UltralyticsDetector(
-            weights=weights, classes=classes_for(targets), conf=conf,
+            weights=weights, classes=classes_for(_targets), conf=conf,
             device=device, imgsz=imgsz,
         )
+    else:
+        _targets = targets if targets is not None else detector.targets
 
     started = time.perf_counter()
     frames, fps, w, h, total, _decode_s = _sample_frames(
         video_path, n_samples=n_samples, sample_width=None
     )
-    counts: dict[str, int] = {t: 0 for t in targets}
+    counts: dict[str, int] = {t: 0 for t in _targets}
     frames_with_hits = 0
     for _frame in frames:
-        frames_with_hits += _tally(detector.detect(_frame), targets, counts)
+        frames_with_hits += _tally(detector.detect(_frame), counts)
 
     return PeekResult(
         video_path=video_path, fps=fps, width=w, height=h, total_frames=total,
@@ -115,7 +121,7 @@ def peek_video(
 def peek_videos(
     paths,
     *,
-    targets: tuple[str, ...] = ("person", "vehicle"),
+    targets: tuple[str, ...] | None = None,
     weights: str = "yolo11n.pt",
     conf: float = 0.35,
     imgsz: int = 320,
@@ -135,14 +141,23 @@ def peek_videos(
     thread — collapsing the hundreds of Python-heavy per-frame calls that bottlenecked the
     per-clip approach.
 
+    ``targets`` specify which detection categories to count. When omitted, they are derived
+    from ``detector.targets``; if no detector is supplied either, defaults to ``("person",
+    "vehicle")``.
+
     Frames are downscaled to ``sample_width`` (longest side) at decode time, which bounds
     host memory (peek needs only category presence, not boxes); pass ``None`` for full-res.
     An unreadable/corrupt clip maps to ``None`` instead of failing the batch. Each result's
     ``elapsed_s`` is that clip's decode time (inference is shared/batched, not per-clip).
     """
-    detector = detector or UltralyticsDetector(
-        weights=weights, classes=classes_for(targets), conf=conf, device=device, imgsz=imgsz
-    )
+    if detector is None:
+        _targets = targets if targets is not None else ("person", "vehicle")
+        detector = UltralyticsDetector(
+            weights=weights, classes=classes_for(_targets), conf=conf,
+            device=device, imgsz=imgsz,
+        )
+    else:
+        _targets = targets if targets is not None else detector.targets
     paths = [Path(p) for p in paths]
 
     # Phase 1: parallel decode + sample (no detector calls -> no lock needed).
@@ -174,10 +189,10 @@ def peek_videos(
     for p in order:
         frames, fps, w, h, total, decode_s = sampled[p]
         start, end = spans[p]
-        counts: dict[str, int] = {t: 0 for t in targets}
+        counts: dict[str, int] = {t: 0 for t in _targets}
         frames_with_hits = 0
         for frame_dets in detections[start:end]:
-            frames_with_hits += _tally(frame_dets, targets, counts)
+            frames_with_hits += _tally(frame_dets, counts)
         out[p] = PeekResult(
             video_path=p, fps=fps, width=w, height=h, total_frames=total,
             n_sampled=len(frames), frames_with_hits=frames_with_hits, counts=counts,

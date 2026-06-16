@@ -69,6 +69,7 @@ class ByteTrackTracker:
         match_thresh: float = 0.8,
         fuse_score: bool = True,
         labels: dict[int, str] | None = None,
+        categories: dict[int, str] | None = None,
     ) -> None:
         self.args = SimpleNamespace(
             track_high_thresh=track_high_thresh,
@@ -80,6 +81,7 @@ class ByteTrackTracker:
         )
         self._tracker = None
         self._labels = labels or COCO_LABELS
+        self._categories = categories or CATEGORY_BY_CLASS
         self.reset()
 
     def reset(self) -> None:
@@ -101,7 +103,7 @@ class ByteTrackTracker:
                     track_id=int(row[4]),
                     class_id=cls_id,
                     label=self._labels.get(cls_id),
-                    category=CATEGORY_BY_CLASS.get(cls_id),
+                    category=self._categories.get(cls_id),
                 )
             )
         return tracks
