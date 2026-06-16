@@ -7,11 +7,22 @@ types, never on a concrete backend.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 import numpy as np
 
-from .types import Detection, FaceDetection, Sighting, Track
+from .types import (
+    Detection,
+    Enrollment,
+    FaceDetection,
+    Identity,
+    SearchHit,
+    Sighting,
+    Track,
+    WatchlistHit,
+)
 
 
 @runtime_checkable
@@ -68,9 +79,11 @@ class Embedder(Protocol):
 
 @runtime_checkable
 class Store(Protocol):
-    """Persistence sink for the ingest pipeline (write-path only, for now).
+    """Persistence sink for the ingest pipeline — the minimal write-path contract.
 
-    Search/enroll/clustering methods are added in later phases when first needed.
+    ``ingest_video`` depends only on this. The read path (search, enroll, clustering,
+    compliance) is the broader ``SearchableStore`` below; keeping them separate lets
+    write-only consumers stay on this narrow contract.
     """
 
     def add_video(
@@ -85,3 +98,81 @@ class Store(Protocol):
     ) -> int: ...
 
     def add_sightings(self, rows: list[Sighting]) -> None: ...
+
+
+@runtime_checkable
+class SearchableStore(Store, Protocol):
+    """The full datastore contract: write-path (``Store``) plus search / identity / compliance.
+
+    Implemented by ``SqliteStore`` (and the test ``FakeStore``). All vector ops filter by
+    ``space_id`` (``embedding_space_id``) — vectors from different embedders are not comparable.
+    Search returns ranked candidates with evidence; assignment/compliance ops take an ``actor``
+    for the audit trail.
+    """
+
+    # --- vector search ---
+    def search_sightings(
+        self,
+        vec: np.ndarray,
+        space_id: str,
+        *,
+        top_k: int,
+        cameras: list[str] | None = None,
+        since: float | None = None,
+        min_quality: float = 0.0,
+    ) -> list[SearchHit]: ...
+
+    def search_enrollments(
+        self, vec: np.ndarray, space_id: str, *, top_k: int
+    ) -> list[WatchlistHit]: ...
+
+    # --- read by id (clustering / search-by-sighting) ---
+    def get_sighting(self, sighting_id: int) -> Sighting | None: ...
+
+    def get_embedding(self, sighting_id: int) -> np.ndarray | None: ...
+
+    def iter_sightings(
+        self, *, space_id: str, unassigned_only: bool = False
+    ) -> Iterator[Sighting]: ...
+
+    # --- identity / enrollment ---
+    def add_identity(self, identity: Identity) -> int: ...
+
+    def get_identity(self, identity_id: int) -> Identity | None: ...
+
+    def list_identities(self, *, type: str | None = None) -> list[Identity]: ...
+
+    def add_enrollment(self, enrollment: Enrollment, vec: np.ndarray) -> int: ...
+
+    # --- assignment / bookkeeping ---
+    def assign_identity(
+        self, sighting_id: int, identity_id: int | None, *, actor: str = "unknown"
+    ) -> None: ...
+
+    def assign_cluster(self, sighting_ids: list[int], cluster_id: int) -> None: ...
+
+    def merge_cluster_into_identity(
+        self, cluster_id: int, identity_id: int, *, actor: str = "unknown"
+    ) -> int: ...
+
+    def add_cluster_run(self, algo: str, params: str, space_id: str) -> int: ...
+
+    # --- compliance ---
+    def audit(
+        self,
+        *,
+        actor: str,
+        action: str,
+        target_type: str | None = None,
+        target_id: int | None = None,
+        query_ref: str | None = None,
+        details: str | None = None,
+    ) -> None: ...
+
+    def list_audit(
+        self, *, actor: str | None = None, since: str | None = None
+    ) -> list[dict]: ...
+
+    def purge(self, *, before: str, actor: str = "unknown") -> int: ...
+
+    def export_case(self, identity_id: int, dest: Path, *, actor: str = "unknown") -> Path: ...
