@@ -1,9 +1,10 @@
 """MCP server exposing argus' triage/track facade as tools (streamable HTTP).
 
-A pure consumer of the public facade — the MCP analogue of ``argus/cli.py``. Five read-mostly
+A pure consumer of the public facade — the MCP analogue of ``argus/cli.py``. Six read-mostly
 tools let an agent discover footage and run the cheap-then-expensive surveillance workflow
 (``list_clips`` -> ``peek_folder``/``peek_clip`` -> ``track_clip``), plus ``search_face`` to
-re-identify a probe face across already-ingested footage. Run it with:
+re-identify a probe face across already-ingested footage and ``classify_audio`` to label a clip's
+sound track. Run it with:
 
     argus-mcp --host 0.0.0.0 --port 8000     # serves MCP over HTTP at /mcp
 
@@ -21,9 +22,9 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from argus import peek_video, peek_videos, search_by_image, track_video
+from argus import analyze_audio, peek_video, peek_videos, search_by_image, track_video
 
-from ._serialize import peek_to_dict, search_to_dict, tracking_to_dict
+from ._serialize import audio_to_dict, peek_to_dict, search_to_dict, tracking_to_dict
 
 mcp = FastMCP("argus")
 
@@ -180,6 +181,29 @@ def search_face(
         return search_to_dict(image, hits)
     finally:
         store.close()
+
+
+@mcp.tool()
+def classify_audio(
+    path: str,
+    model: str = "bioamla/ast-esc50",
+    overlap_seconds: float = 1.0,
+    segment_seconds: float = 5.0,
+    top_k: int = 2,
+    candidate_labels: list[str] | None = None,
+    device: str | None = None,
+) -> dict[str, Any]:
+    """Classify the audio track of a server-side clip into per-segment sound labels.
+
+    Extracts 16kHz mono audio, windows it into overlapping ``segment_seconds`` segments, and runs
+    an audio-classification model on each (AST/ESC-50 by default; pass a CLAP ``model`` +
+    ``candidate_labels`` for zero-shot). Returns per-segment top-k ``{class, confidence}``
+    predictions with time spans. Needs the ``audio`` extra (transformers + soundfile).
+    """
+    return audio_to_dict(analyze_audio(
+        Path(path), model=model, overlap_seconds=overlap_seconds, segment_seconds=segment_seconds,
+        top_k=top_k, candidate_labels=candidate_labels, device=device,
+    ))
 
 
 def main(argv: list[str] | None = None) -> int:

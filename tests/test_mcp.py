@@ -15,8 +15,8 @@ import pytest
 
 pytest.importorskip("mcp")  # the MCP server stack is an optional extra
 
-from argus import PeekResult, TrackingResult
-from argus.core import SearchHit, Sighting, Track
+from argus import AudioAnalysis, PeekResult, TrackingResult
+from argus.core import AudioPrediction, AudioSegment, SearchHit, Sighting, Track
 from argus.mcp import _serialize, server
 
 
@@ -165,3 +165,35 @@ def test_search_face_ranks_forwards_filters_and_closes_store(tmp_path, monkeypat
     assert captured["kw"]["min_quality"] == 0.4
     assert captured["kw"]["actor"] == "alice"
     assert closed == [True]
+
+
+def _audio(path) -> AudioAnalysis:
+    seg = AudioSegment(0, 0.0, 5.0,
+                       (AudioPrediction("siren", 0.8), AudioPrediction("None", 0.0)))
+    return AudioAnalysis(input_file=Path(path), audio_path=Path(path).with_suffix(".wav"),
+                         input_duration_seconds=5.0, model_name="ast-esc50",
+                         overlap_seconds=1.0, segment_seconds=5.0, segments=[seg])
+
+
+def test_audio_to_dict_is_jsonable():
+    d = _serialize.audio_to_dict(_audio("clip.mp4"))
+    json.dumps(d)
+    assert d["model_name"] == "ast-esc50"
+    assert d["segments"][0]["predictions"][0] == {"class": "siren", "confidence": 0.8}
+
+
+def test_classify_audio_forwards_and_serializes(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_analyze(path, **kw):
+        captured.update(path=path, kw=kw)
+        return _audio(path)
+
+    monkeypatch.setattr(server, "analyze_audio", fake_analyze)
+    out = server.classify_audio(str(tmp_path / "clip.mp4"), model="laion/clap-htsat-unfused",
+                                overlap_seconds=2.0, candidate_labels=["siren", "speech"])
+    json.dumps(out)
+    assert out["segments"][0]["predictions"][0]["class"] == "siren"
+    assert captured["kw"]["model"] == "laion/clap-htsat-unfused"
+    assert captured["kw"]["overlap_seconds"] == 2.0
+    assert captured["kw"]["candidate_labels"] == ["siren", "speech"]
