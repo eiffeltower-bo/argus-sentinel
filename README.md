@@ -129,7 +129,7 @@ reservation is enabled in `docker-compose.yml`; remove its `deploy:` block on CP
 ## MCP server
 
 Expose the triage/track workflow as tools an LLM agent can call (`list_clips`, `peek_folder`,
-`peek_clip`, `track_clip`) over HTTP:
+`peek_clip`, `track_clip`, plus `search_face` for face-ID re-identification) over HTTP:
 
 ```bash
 uv run argus-mcp --port 8000                 # local
