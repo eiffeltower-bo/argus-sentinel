@@ -13,12 +13,14 @@ changes. Transport is **streamable HTTP**; the endpoint is `/mcp`.
 | `peek_clip(path, targets, n_samples, min_hits, device)` | Fast-triage one clip → verdict + per-category counts + `interesting` bool. | cheap |
 | `track_clip(path, targets, max_frames, stride, render, device)` | Detect + track through a clip → per-track metrics; `render=true` also writes an annotated H.264 clip. | heavy |
 | `search_face(image, top_k, cameras, since, min_quality, device, actor)` | Re-identify a probe face across **already-ingested** footage → ranked hits (cosine `score` + evidence `chip_path`). Candidates for human review, never an automated match. | medium |
+| `classify_audio(path, model, overlap_seconds, segment_seconds, top_k, candidate_labels, device)` | Classify a clip's **audio** track into per-segment sound labels (AST/ESC-50, or zero-shot CLAP via `candidate_labels`). Needs the `audio` extra. | medium |
 
 Intended agent flow: `list_clips` → `peek_folder`/`peek_clip` (cheap) → `track_clip` only the
 interesting ones. `search_face` is the face-ID path: it queries the sighting DB (`ARGUS_DB`)
-populated by ingest, so footage must be ingested before it returns anything. **All paths are
-server-side** (in Docker, footage is mounted at `/data`). `device=None` (default) auto-selects the
-GPU when GPU torch is installed, else CPU.
+populated by ingest, so footage must be ingested before it returns anything. `classify_audio` is
+the audio path: it extracts and labels the sound track of a clip directly (no ingest needed).
+**All paths are server-side** (in Docker, footage is mounted at `/data`). `device=None` (default)
+auto-selects the GPU when GPU torch is installed, else CPU.
 
 ---
 
@@ -41,7 +43,7 @@ folder with `.mp4` files:
 uv run python examples/mcp_client_demo.py --url http://127.0.0.1:8000/mcp \
     --dir /home/pepe/data --glob '**/*.mp4'
 ```
-Expected output: the 5 tool names, a clip count from `list_clips`, and a `peek_clip` verdict
+Expected output: the 6 tool names, a clip count from `list_clips`, and a `peek_clip` verdict
 (JSON) for the first clip. That confirms the transport + tools end-to-end.
 
 **4. Stop the server:** `Ctrl-C` in the first terminal.
@@ -126,6 +128,9 @@ Tool results arrive both as `structuredContent` (a dict) and as text in `content
 - **`search_face`** → `{query, n_hits, hits:[…]}`. Each hit: `sighting_id, score` (cosine, 0–1),
   `distance, camera_id, ts, video_id, track_id, frame_idx, bbox, quality, chip_path, identity_id,
   cluster_id`. `chip_path` is the server-side aligned-face image for operator review.
+- **`classify_audio`** → `{input_file, audio_path, input_duration_seconds, model_name,
+  overlap_seconds, segment_seconds, segments:[…]}`. Each segment: `{segment_index, start_time,
+  end_time, predictions:[{class, confidence}, …]}` (top-`top_k`, ranked best-first).
 
 ---
 

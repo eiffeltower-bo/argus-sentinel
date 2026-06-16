@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from argus import PeekResult, SearchHit, TrackingResult
+    from argus import AudioAnalysis, PeekResult, SearchHit, TrackingResult
 
 
 def peek_to_dict(r: PeekResult) -> dict:
@@ -82,3 +82,12 @@ def search_to_dict(query_ref: str, hits: Sequence[SearchHit]) -> dict:
         "n_hits": len(hits),
         "hits": [_hit_to_dict(h) for h in hits],
     }
+
+
+def audio_to_dict(r: AudioAnalysis) -> dict:
+    """An ``AudioAnalysis`` as a JSON-able dict: per-segment sound predictions over time.
+
+    Delegates to ``AudioAnalysis.to_dict()`` (Path->str, per-segment top-k ``{class, confidence}``);
+    kept here for parity/testability with the other ``*_to_dict`` serializers.
+    """
+    return r.to_dict()
