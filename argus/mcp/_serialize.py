@@ -10,7 +10,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from argus import PeekResult, TrackingResult
+    from collections.abc import Sequence
+
+    from argus import PeekResult, SearchHit, TrackingResult
 
 
 def peek_to_dict(r: PeekResult) -> dict:
@@ -46,4 +48,37 @@ def tracking_to_dict(r: TrackingResult, rendered: str | None) -> dict:
         "n_tracks": len(r.track_ids),
         "tracks": r.metrics().to_dicts(),
         "rendered": rendered,
+    }
+
+
+def _hit_to_dict(h: SearchHit) -> dict:
+    """One ``SearchHit`` as a JSON-able row: similarity + the matched sighting's evidence."""
+    s = h.sighting
+    return {
+        "sighting_id": s.id,
+        "score": h.score,
+        "distance": h.distance,
+        "camera_id": s.camera_id,
+        "ts": s.ts,
+        "video_id": s.video_id,
+        "track_id": s.track_id,
+        "frame_idx": s.frame_idx,
+        "bbox": list(s.bbox),
+        "quality": s.quality,
+        "chip_path": s.chip_path,
+        "identity_id": s.identity_id,
+        "cluster_id": s.cluster_id,
+    }
+
+
+def search_to_dict(query_ref: str, hits: Sequence[SearchHit]) -> dict:
+    """Ranked face-search ``SearchHit``s as a JSON-able dict.
+
+    ``chip_path`` on each hit is the server-side path of the aligned face chip — the evidence an
+    operator reviews; results are candidates for human adjudication, never an automated match.
+    """
+    return {
+        "query": str(query_ref),
+        "n_hits": len(hits),
+        "hits": [_hit_to_dict(h) for h in hits],
     }

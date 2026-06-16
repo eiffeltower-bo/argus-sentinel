@@ -12,10 +12,13 @@ changes. Transport is **streamable HTTP**; the endpoint is `/mcp`.
 | `peek_folder(directory, glob, targets, n_samples, min_hits, device)` | Fast-triage a whole folder: which clips contain people/vehicles worth tracking. | cheap |
 | `peek_clip(path, targets, n_samples, min_hits, device)` | Fast-triage one clip → verdict + per-category counts + `interesting` bool. | cheap |
 | `track_clip(path, targets, max_frames, stride, render, device)` | Detect + track through a clip → per-track metrics; `render=true` also writes an annotated H.264 clip. | heavy |
+| `search_face(image, top_k, cameras, since, min_quality, device, actor)` | Re-identify a probe face across **already-ingested** footage → ranked hits (cosine `score` + evidence `chip_path`). Candidates for human review, never an automated match. | medium |
 
 Intended agent flow: `list_clips` → `peek_folder`/`peek_clip` (cheap) → `track_clip` only the
-interesting ones. **All paths are server-side** (in Docker, footage is mounted at `/data`).
-`device=None` (default) auto-selects the GPU when GPU torch is installed, else CPU.
+interesting ones. `search_face` is the face-ID path: it queries the sighting DB (`ARGUS_DB`)
+populated by ingest, so footage must be ingested before it returns anything. **All paths are
+server-side** (in Docker, footage is mounted at `/data`). `device=None` (default) auto-selects the
+GPU when GPU torch is installed, else CPU.
 
 ---
 
@@ -38,7 +41,7 @@ folder with `.mp4` files:
 uv run python examples/mcp_client_demo.py --url http://127.0.0.1:8000/mcp \
     --dir /home/pepe/data --glob '**/*.mp4'
 ```
-Expected output: the 4 tool names, a clip count from `list_clips`, and a `peek_clip` verdict
+Expected output: the 5 tool names, a clip count from `list_clips`, and a `peek_clip` verdict
 (JSON) for the first clip. That confirms the transport + tools end-to-end.
 
 **4. Stop the server:** `Ctrl-C` in the first terminal.
@@ -120,6 +123,9 @@ Tool results arrive both as `structuredContent` (a dict) and as text in `content
   metrics…], rendered}`. Each track row: `id, category, type, first_s, last_s, duration_s,
   n_frames, continuity, avg_*, entry_edge, exit_edge`. `rendered` is the server-side path of the
   annotated clip when `render=true`, else `null`.
+- **`search_face`** → `{query, n_hits, hits:[…]}`. Each hit: `sighting_id, score` (cosine, 0–1),
+  `distance, camera_id, ts, video_id, track_id, frame_idx, bbox, quality, chip_path, identity_id,
+  cluster_id`. `chip_path` is the server-side aligned-face image for operator review.
 
 ---
 
