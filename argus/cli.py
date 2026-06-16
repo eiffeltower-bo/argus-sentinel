@@ -1,14 +1,15 @@
 """Thin command-line surface over the argus facade — the container entrypoint.
 
-Two subcommands mirror the public functions:
+Subcommands mirror the public functions:
 
     argus peek  FOLDER  [--targets ...] [--glob '*.mp4'] [--device cuda] [--workers N] [--json]
     argus track VIDEO   [--targets ...] [--device cuda] [--max-frames N] [--render OUT] [--json]
+    argus audio CLIP    [--model M] [--overlap S] [--segment S] [--labels ...] [--device cuda] [--json]
 
 It is a pure dispatch layer: it imports only the cheap re-exports from ``argus`` (heavy libs
 stay lazy inside the backends) and adds no logic of its own, so a future FastAPI/MCP server can
-call the same ``peek_videos``/``track_video`` functions. ``--json`` emits one machine-readable
-object to stdout (handy for smoke tests and scripting).
+call the same ``peek_videos``/``track_video``/``analyze_audio`` functions. ``--json`` emits one
+machine-readable object to stdout (handy for smoke tests and scripting).
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import json
 import sys
 from pathlib import Path
 
-from argus import peek_videos, track_video
+from argus import analyze_audio, peek_videos, track_video
 
 _TARGETS = ("person", "vehicle")
 
@@ -89,6 +90,21 @@ def _track(args: argparse.Namespace) -> int:
     return 0
 
 
+def _audio(args: argparse.Namespace) -> int:
+    result = analyze_audio(
+        args.clip, model=args.model, overlap_seconds=args.overlap,
+        segment_seconds=args.segment, top_k=args.top_k,
+        candidate_labels=args.labels, device=args.device,
+    )
+    if args.json:
+        print(json.dumps(result.to_dict()))
+        return 0
+
+    print(result.summary())
+    print(result.metrics())
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="argus", description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="command", required=True)
@@ -108,6 +124,19 @@ def main(argv: list[str] | None = None) -> int:
                               "(default: out/<name>_tracked.mp4)")
     _add_common(p_track)
     p_track.set_defaults(func=_track)
+
+    p_audio = sub.add_parser("audio", help="classify the audio track of one clip")
+    p_audio.add_argument("clip", type=Path, help="path to an audio or video file")
+    p_audio.add_argument("--model", default="bioamla/ast-esc50", help="HuggingFace audio model")
+    p_audio.add_argument("--overlap", type=float, default=1.0,
+                         help="seconds of overlap between adjacent 5s segments")
+    p_audio.add_argument("--segment", type=float, default=5.0, help="segment length in seconds")
+    p_audio.add_argument("--top-k", type=int, default=2, help="predictions kept per segment")
+    p_audio.add_argument("--labels", nargs="+", default=None,
+                         help="candidate labels for a zero-shot CLAP model")
+    p_audio.add_argument("--device", default=None, help="'cuda', 'cpu', ... (default: auto)")
+    p_audio.add_argument("--json", action="store_true", help="emit one JSON object to stdout")
+    p_audio.set_defaults(func=_audio)
 
     args = ap.parse_args(argv)
     return args.func(args)
