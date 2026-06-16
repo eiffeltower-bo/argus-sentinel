@@ -8,15 +8,15 @@
 #   docker compose exec dev argus peek /data --json
 #   docker compose down                 # stop
 #
-# CPU by default. For local GPU dev (needs the NVIDIA Container Toolkit), build the image with
-# the CUDA torch index — the bind mount alone does NOT switch torch, the image must be rebuilt:
+# CPU by default — `dev` and `mcp` run anywhere (no GPU required). For local GPU (needs the
+# NVIDIA Container Toolkit) use the `dev-gpu` / `mcp-gpu` services, built with the CUDA torch
+# index — the bind mount alone does NOT switch torch, so the image must be rebuilt:
 #
-#   TORCH_INDEX=https://download.pytorch.org/whl/cu126 docker compose build dev
-#   docker compose up -d dev
-#   docker compose exec dev python -c "import torch; print(torch.cuda.is_available())"   # -> True
+#   TORCH_INDEX=https://download.pytorch.org/whl/cu126 EXTRAS='[face-gpu]' docker compose build dev-gpu
+#   docker compose up -d dev-gpu
+#   docker compose exec dev-gpu python -c "import torch; print(torch.cuda.is_available())"   # -> True
 #
-# (torch 2.12.0 CUDA wheels: cu126 or cu130; add EXTRAS='[face-gpu]' for the GPU face path.)
-# On a CPU-only host, delete the `deploy:` block below or `docker compose up` will fail.
+# (torch 2.12.0 CUDA wheels: cu126 or cu130.)
 services:
   dev:
     build:
@@ -35,7 +35,13 @@ services:
       # then: argus track /data/shoplifting_dataset/normal/normal-10.mp4 --render
       - ${ARGUS_DATA:-./data}:/data:ro
     command: sleep infinity
-    # GPU dev (uncomment with a CUDA build above):
+
+  # GPU dev variant — the same image plus an NVIDIA GPU reservation. Build with the CUDA torch
+  # index: TORCH_INDEX=https://download.pytorch.org/whl/cu126 EXTRAS='[face-gpu]' docker compose build dev-gpu
+  dev-gpu:
+    extends:
+      service: dev
+    image: argus:dev-gpu
     deploy:
       resources:
         reservations:

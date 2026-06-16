@@ -117,18 +117,17 @@ docker compose down                                   # stop
 `--render` with no path writes `out/<name>_tracked.mp4` in the repo root (bind-mounted, so it
 appears on the host).
 
-CPU by default. For local GPU work (needs the NVIDIA Container Toolkit), **rebuild** the image
-with the CUDA torch index — the bind mount alone doesn't switch torch, so detection silently
-stays on CPU until the image is rebuilt:
+CPU by default — `dev` runs anywhere. For local GPU work (needs the NVIDIA Container Toolkit)
+use the **`dev-gpu`** service (same image + a GPU reservation), built with the CUDA torch index —
+the bind mount alone doesn't switch torch, so the image must be rebuilt:
 
 ```bash
-TORCH_INDEX=https://download.pytorch.org/whl/cu126 docker compose build dev
-docker compose up -d dev
-docker compose exec dev python -c "import torch; print(torch.cuda.is_available())"   # -> True
+TORCH_INDEX=https://download.pytorch.org/whl/cu126 docker compose build dev-gpu
+docker compose up -d dev-gpu
+docker compose exec dev-gpu python -c "import torch; print(torch.cuda.is_available())"   # -> True
 ```
 
-With GPU torch present, `device=None` (the CLI default) auto-selects `cuda:0`. The GPU
-reservation is enabled in `docker-compose.yml`; remove its `deploy:` block on CPU-only hosts.
+With GPU torch present, `device=None` (the CLI default) auto-selects `cuda:0`.
 
 ## MCP server
 
@@ -146,22 +145,14 @@ Step-by-step tutorial (local + Docker, a test client, and connecting Claude Code
 
 ## Tutorial (Docker, end-to-end)
 
-Smoke-test the CLI + MCP tools on real footage. Build the images once with the backends you
-want, then mount one folder at a time (read-only at `/data`).
+Smoke-test the CLI + MCP tools on real footage. **CPU by default — runs anywhere, incl. macOS /
+Apple Silicon.** Build the images once, then mount one folder at a time at `/data`.
 
-Build — **GPU (NVIDIA)**:
-```bash
-EXTRAS='[face-gpu,store,audio,open-vocab]' docker compose build dev mcp
-```
-
-Build — **CPU / macOS** (no NVIDIA GPU; Apple Silicon included):
+Build (CPU):
 ```bash
 TORCH_INDEX=https://download.pytorch.org/whl/cpu \
   EXTRAS='[face,store,audio,open-vocab]' docker compose build dev mcp
 ```
-On a CPU-only host, first comment out the `deploy:` block in the **dev** service of
-`docker-compose.yml`, or `docker compose up dev` fails (no NVIDIA toolkit). The commands below
-are unchanged — `device=None` auto-selects CPU (the models just run slower).
 
 CLI — tracking + audio:
 ```bash
@@ -178,6 +169,14 @@ MCP — same mount, tools over HTTP:
 ```bash
 ARGUS_DATA=/path/to/clips docker compose up -d mcp
 uv run python examples/mcp_client_demo.py --url http://127.0.0.1:8000/mcp --dir /data
+```
+
+**GPU (NVIDIA)** — build the `*-gpu` images with the CUDA torch index and use them in place of
+`dev`/`mcp` (they add the GPU reservation):
+```bash
+TORCH_INDEX=https://download.pytorch.org/whl/cu126 \
+  EXTRAS='[face-gpu,store,audio,open-vocab]' docker compose build dev-gpu mcp-gpu
+ARGUS_DATA=/path/to/clips docker compose up -d dev-gpu    # then: docker compose exec dev-gpu argus …
 ```
 
 Face-ID (people clips) is SDK ingest then MCP `search_face` — see
