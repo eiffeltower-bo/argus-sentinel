@@ -144,15 +144,24 @@ docker compose up -d mcp                     # or containerized (mcp-gpu for GPU
 Step-by-step tutorial (local + Docker, a test client, and connecting Claude Code):
 [context/mcp-server.md](context/mcp-server.md).
 
-## Rehearsal (Docker, end-to-end)
+## Tutorial (Docker, end-to-end)
 
 Smoke-test the CLI + MCP tools on real footage. Build the images once with the backends you
 want, then mount one folder at a time (read-only at `/data`).
 
+Build — **GPU (NVIDIA)**:
 ```bash
-# GPU build with every backend (CPU: TORCH_INDEX=…/whl/cpu and EXTRAS='[face,store,audio,open-vocab]')
 EXTRAS='[face-gpu,store,audio,open-vocab]' docker compose build dev mcp
 ```
+
+Build — **CPU / macOS** (no NVIDIA GPU; Apple Silicon included):
+```bash
+TORCH_INDEX=https://download.pytorch.org/whl/cpu \
+  EXTRAS='[face,store,audio,open-vocab]' docker compose build dev mcp
+```
+On a CPU-only host, first comment out the `deploy:` block in the **dev** service of
+`docker-compose.yml`, or `docker compose up dev` fails (no NVIDIA toolkit). The commands below
+are unchanged — `device=None` auto-selects CPU (the models just run slower).
 
 CLI — tracking + audio:
 ```bash
