@@ -23,6 +23,10 @@ RUN apt-get update \
 
 ########## builder — resolve + install deps into a venv ##########
 FROM base AS builder
+# git lets the optional `open-vocab` extra install ultralytics' CLIP fork from a git URL.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git \
+ && rm -rf /var/lib/apt/lists/*
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 ENV UV_LINK_MODE=copy \

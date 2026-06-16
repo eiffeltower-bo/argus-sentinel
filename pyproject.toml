@@ -2,6 +2,11 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Allow the `open-vocab` extra's git URL (clip @ git+https://…) — hatchling rejects direct
+# references otherwise.
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [project]
 name = "argus"
 version = "0.1.0"
@@ -59,6 +64,10 @@ cluster = ["scikit-learn>=1.3"]
 # install time via the torch index — transformers is runtime-agnostic and rides that, so there
 # is NO separate `audio-gpu` extra (unlike face/face-gpu, which the onnxruntime split forces).
 audio = ["transformers>=4.40", "soundfile>=0.12"]
+# Open-vocabulary detection (OpenVocabularyDetector / YOLO-World). Pulls ultralytics' CLIP fork
+# from git, so installing this extra needs the git binary (the Dockerfile builder installs it;
+# locally, `apt install git` first). Lazy-imported — only loaded when OpenVocabularyDetector runs.
+open-vocab = ["clip @ git+https://github.com/ultralytics/CLIP.git"]
 # Opt-in sample-data fetching (private repo, needs SSH). Not required to run argus.
 datasets = ["surveillance-datasets[hf,torch,yolo]"]
 # Opt-in notebook authoring (marimo examples).

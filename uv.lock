@@ -288,6 +288,9 @@ mcp = [
 notebooks = [
     { name = "jupyter" },
 ]
+open-vocab = [
+    { name = "clip" },
+]
 store = [
     { name = "sqlite-vec" },
 ]
@@ -301,6 +304,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "altair", specifier = ">=5.4.0" },
+    { name = "clip", marker = "extra == 'open-vocab'", git = "https://github.com/ultralytics/CLIP.git" },
     { name = "insightface", marker = "extra == 'face'", specifier = ">=0.7.3" },
     { name = "insightface", marker = "extra == 'face-gpu'", specifier = ">=0.7.3" },
     { name = "jupyter", marker = "extra == 'notebooks'", specifier = ">=1.1.1" },
@@ -326,7 +330,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'audio'", specifier = ">=4.40" },
     { name = "ultralytics", specifier = "==8.4.66" },
 ]
-provides-extras = ["face", "face-gpu", "store", "cluster", "audio", "datasets", "notebooks", "mcp"]
+provides-extras = ["face", "face-gpu", "store", "cluster", "audio", "open-vocab", "datasets", "notebooks", "mcp"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -562,6 +566,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/9b/98/518d8e5081007684232226f475082b30087d0f585e8457db087298259f49/click-8.4.1.tar.gz", hash = "sha256:918b5633eddf6b41c32d4f454bf0de810065c74e3f7dbf8ee5452f8be88d3e96", size = 353007, upload-time = "2026-05-22T04:08:37.769Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/0d/67e5b4109ea4a837e80daa87c2c696711955e40449a97e8926672534def2/click-8.4.1-py3-none-any.whl", hash = "sha256:482be17c6991b8c19c5429a1e995d9b0efdbb63172824c41f99965dc0ade8ec2", size = 116639, upload-time = "2026-05-22T04:08:35.26Z" },
+]
+
+[[package]]
+name = "clip"
+version = "1.0"
+source = { git = "https://github.com/ultralytics/CLIP.git#577b3cfa75f072c20a3f02b44ffde111d93eb3be" }
+dependencies = [
+    { name = "ftfy" },
+    { name = "regex" },
+    { name = "torch", version = "2.12.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "platform_machine != 's390x' and sys_platform == 'darwin'" },
+    { name = "torch", version = "2.12.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "platform_machine == 's390x' or sys_platform != 'darwin'" },
+    { name = "torchvision", version = "0.27.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "platform_machine != 's390x' and sys_platform == 'darwin'" },
+    { name = "torchvision", version = "0.27.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "platform_machine == 's390x' or sys_platform != 'darwin'" },
+    { name = "tqdm" },
 ]
 
 [[package]]
@@ -975,6 +993,18 @@ wheels = [
 [package.optional-dependencies]
 http = [
     { name = "aiohttp" },
+]
+
+[[package]]
+name = "ftfy"
+version = "6.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "wcwidth" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a5/d3/8650919bc3c7c6e90ee3fa7fd618bf373cbbe55dff043bd67353dbb20cd8/ftfy-6.3.1.tar.gz", hash = "sha256:9b3c3d90f84fb267fe64d375a07b7f8912d817cf86009ae134aa03e1819506ec", size = 308927, upload-time = "2024-10-26T00:50:35.149Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/6e/81d47999aebc1b155f81eca4477a616a70f238a2549848c38983f3c22a82/ftfy-6.3.1-py3-none-any.whl", hash = "sha256:7c70eb532015cd2f9adb53f101fb6c7945988d023a085d127d1573dc49dd0083", size = 44821, upload-time = "2024-10-26T00:50:33.425Z" },
 ]
 
 [[package]]
