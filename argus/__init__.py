@@ -21,10 +21,14 @@ Future drop-in spots (not built yet): a face/ stage (detect->align->embed), a si
 package (parquet/pgvector), and pipeline/stages.py for composable multi-stage chains.
 """
 
+from .audio import HuggingFaceAudioClassifier, extract_audio
 from .core import (
     CATEGORY_BY_CLASS,
     COCO_LABELS,
     TARGET_CLASSES,
+    AudioClassifier,
+    AudioPrediction,
+    AudioSegment,
     Detection,
     Detector,
     Embedder,
@@ -57,10 +61,12 @@ from .identity import (
     search_by_sighting,
 )
 from .pipeline import (
+    AudioAnalysis,
     IngestResult,
     PeekResult,
     TrackingResult,
     VideoTracker,
+    analyze_audio,
     ingest_video,
     peek_video,
     peek_videos,
@@ -121,4 +127,12 @@ __all__ = [
     "audit_log",
     "purge",
     "export_case",
+    # audio
+    "AudioClassifier",
+    "HuggingFaceAudioClassifier",
+    "AudioPrediction",
+    "AudioSegment",
+    "AudioAnalysis",
+    "analyze_audio",
+    "extract_audio",
 ]

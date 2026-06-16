@@ -14,6 +14,7 @@ from typing import Protocol, runtime_checkable
 import numpy as np
 
 from .types import (
+    AudioPrediction,
     Detection,
     Enrollment,
     FaceDetection,
@@ -75,6 +76,34 @@ class Embedder(Protocol):
     dim: int
 
     def embed(self, chips: list[np.ndarray]) -> np.ndarray: ...  # (N, dim) float32, L2-normalized
+
+
+@runtime_checkable
+class AudioClassifier(Protocol):
+    """Classify one mono audio segment into ranked ``(label, confidence)`` predictions.
+
+    The model-agnostic contract the audio pipeline depends on: any object with this ``.classify``
+    signature is a valid backend (a HuggingFace AST or CLAP pipeline, or otherwise). It operates
+    on a single segment of float samples at ``samplerate`` Hz; the pipeline handles decode +
+    windowing and feeds segments one at a time, so the model is loaded once and reused across a
+    whole clip.
+
+    ``classifier_id`` namespaces the model that produced a prediction (the ``Embedder``
+    ``embedding_space_id`` analogue), so a result records its provenance. ``is_zero_shot`` is
+    True for CLAP-style models, which honor ``candidate_labels``.
+    """
+
+    classifier_id: str
+    is_zero_shot: bool
+
+    def classify(
+        self,
+        samples: np.ndarray,
+        samplerate: int,
+        *,
+        top_k: int = 2,
+        candidate_labels: list[str] | None = None,
+    ) -> list[AudioPrediction]: ...
 
 
 @runtime_checkable
