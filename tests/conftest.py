@@ -6,7 +6,17 @@ import cv2
 import numpy as np
 import pytest
 
-from argus.core import Detection, FaceDetection, Track
+from dataclasses import replace
+
+from argus.core import (
+    Detection,
+    Enrollment,
+    FaceDetection,
+    Identity,
+    SearchHit,
+    Track,
+    WatchlistHit,
+)
 
 
 class ScriptedDetector:
@@ -112,13 +122,22 @@ class FakeEmbedder:
 
 
 class FakeStore:
-    """An in-memory ``Store`` capturing writes; ``chips_dir`` points at a real temp dir."""
+    """In-memory ``SearchableStore`` for tests — brute-force numpy search, no sqlite-vec.
+
+    Mirrors ``SqliteStore`` semantics closely enough to drive search/enroll/cluster/admin tests
+    with fakes. ``purge``/``export_case`` are authoritatively tested against the real store.
+    """
 
     def __init__(self, chips_dir) -> None:
         self.chips_dir = chips_dir
         self.videos: list[dict] = []
         self.sightings: list = []
+        self.identities: list = []
+        self.enrollments: list = []          # (Enrollment, vec)
+        self.cluster_runs: list = []
+        self.audit_rows: list[dict] = []
 
+    # --- write path ---
     def add_video(self, camera_id, path, *, fps, duration_s, width, height) -> int:
         self.videos.append(
             {"camera_id": camera_id, "path": path, "fps": fps,
@@ -130,6 +149,117 @@ class FakeStore:
         for r in rows:
             r.id = len(self.sightings) + 1
             self.sightings.append(r)
+
+    # --- search ---
+    def search_sightings(self, vec, space_id, *, top_k, cameras=None, since=None, min_quality=0.0):
+        cand = [s for s in self.sightings if s.embedding_space_id == space_id]
+        if cameras:
+            cand = [s for s in cand if s.camera_id in cameras]
+        if since is not None:
+            cand = [s for s in cand if s.ts >= since]
+        if min_quality > 0.0:
+            cand = [s for s in cand if s.quality >= min_quality]
+        scored = sorted(((1.0 - float(np.dot(vec, s.embedding)), s) for s in cand),
+                        key=lambda x: x[0])
+        return [SearchHit(sighting=s, distance=d, score=1.0 - d) for d, s in scored[:top_k]]
+
+    def search_enrollments(self, vec, space_id, *, top_k):
+        scored = sorted(
+            ((1.0 - float(np.dot(vec, v)), e) for e, v in self.enrollments
+             if e.embedding_space_id == space_id),
+            key=lambda x: x[0],
+        )
+        hits, seen = [], set()
+        for d, e in scored[:top_k]:
+            if e.identity_id in seen:
+                continue
+            seen.add(e.identity_id)
+            hits.append(WatchlistHit(identity=self.get_identity(e.identity_id), distance=d,
+                                     score=1.0 - d, chip_path=e.chip_path))
+        return hits
+
+    def get_sighting(self, sighting_id, *, with_embedding=True):
+        return next((s for s in self.sightings if s.id == sighting_id), None)
+
+    def get_embedding(self, sighting_id):
+        s = self.get_sighting(sighting_id)
+        return None if s is None else s.embedding
+
+    def iter_sightings(self, *, space_id, unassigned_only=False):
+        for s in sorted(self.sightings, key=lambda s: s.id):
+            if s.embedding_space_id != space_id:
+                continue
+            if unassigned_only and s.identity_id is not None:
+                continue
+            yield s
+
+    # --- identity / enrollment ---
+    def add_identity(self, identity) -> int:
+        new = replace(identity, id=len(self.identities) + 1)
+        self.identities.append(new)
+        return new.id
+
+    def get_identity(self, identity_id):
+        return next((i for i in self.identities if i.id == identity_id), None)
+
+    def list_identities(self, *, type=None):
+        return [i for i in self.identities if type is None or i.type == type]
+
+    def add_enrollment(self, enrollment, vec) -> int:
+        new = replace(enrollment, id=len(self.enrollments) + 1)
+        self.enrollments.append((new, np.asarray(vec, dtype=np.float32)))
+        return new.id
+
+    # --- assignment / clustering ---
+    def assign_identity(self, sighting_id, identity_id, *, actor="unknown") -> None:
+        s = self.get_sighting(sighting_id)
+        if s is not None:
+            s.identity_id = identity_id
+        self.audit(actor=actor, action="assign_identity", target_type="sighting",
+                   target_id=sighting_id, details=f"identity_id={identity_id}")
+
+    def assign_cluster(self, sighting_ids, cluster_id) -> None:
+        for s in self.sightings:
+            if s.id in sighting_ids:
+                s.cluster_id = cluster_id
+
+    def merge_cluster_into_identity(self, cluster_id, identity_id, *, actor="unknown") -> int:
+        n = 0
+        for s in self.sightings:
+            if s.cluster_id == cluster_id:
+                s.identity_id, s.cluster_id, n = identity_id, None, n + 1
+        self.audit(actor=actor, action="merge", target_type="identity", target_id=identity_id,
+                   details=f"cluster_id={cluster_id} n={n}")
+        return n
+
+    def add_cluster_run(self, algo, params, space_id) -> int:
+        self.cluster_runs.append({"algo": algo, "params": params, "space_id": space_id})
+        return len(self.cluster_runs)
+
+    # --- compliance ---
+    def audit(self, *, actor, action, target_type=None, target_id=None, query_ref=None,
+              details=None) -> None:
+        self.audit_rows.append(
+            {"actor": actor, "action": action, "target_type": target_type,
+             "target_id": target_id, "query_ref": query_ref, "details": details}
+        )
+
+    def list_audit(self, *, actor=None, since=None):
+        return [r for r in self.audit_rows if actor is None or r["actor"] == actor]
+
+    def purge(self, *, before, actor="unknown") -> int:  # in-memory: real semantics tested on sqlite
+        n = len(self.sightings)
+        self.sightings.clear()
+        self.audit(actor=actor, action="purge", details=f"before={before} n={n}")
+        return n
+
+    def export_case(self, identity_id, dest, *, actor="unknown"):
+        from pathlib import Path
+
+        dest = Path(dest)
+        dest.mkdir(parents=True, exist_ok=True)
+        self.audit(actor=actor, action="export", target_type="identity", target_id=identity_id)
+        return dest
 
 
 @pytest.fixture
