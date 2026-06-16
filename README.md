@@ -12,20 +12,23 @@ exercise it on real surveillance footage.
 
 ```
 argus/
-  core/        shared types (Detection, Track) + extension Protocols (Detector, Tracker)
-               + COCO taxonomy — dependency-free foundation
-  detect/      object detection; detect/backends/ultralytics.py (YOLO11)
-  track/       tracking-by-detection; track/backends/bytetrack.py (ByteTrack)
-  pipeline/    orchestration: tracking.py (VideoTracker/track_video/TrackingResult),
-               peek.py (peek_video/peek_videos/PeekResult)
-examples/      marimo notebooks (person tracking, vehicle tracking, folder peek-by-time)
+  core/        shared types + extension Protocols (Detector, Tracker, FaceDetector,
+               Embedder, AudioClassifier, Store) + COCO taxonomy — dependency-free
+  detect/      object detection; YOLO11 + open-vocabulary YOLO-World backends
+  track/       tracking-by-detection; ByteTrack backend
+  face/ embed/ face detection + alignment + ArcFace embedding
+  store/       SQLite + sqlite-vec sighting store
+  audio/       audio classification (AST / zero-shot CLAP) backends
+  pipeline/    orchestration: track_video, peek_videos, ingest_video, analyze_audio
+  identity/    face search / re-ID clustering / compliance over the store
+  mcp/         MCP server exposing the facade as HTTP tools
+examples/      marimo notebooks
 tests/         fast unit suite (no GPU/weights/data needed)
-context/       architecture.md (module map + how to extend) + face-id-design.md (v0.3)
+context/       architecture.md + face-id-design.md + mcp-server.md
 ```
 
-The extension contracts all live in `argus/core` — implement a `Detector`/`Tracker`
-Protocol and drop the file in the matching `*/backends/` folder. See
-[context/architecture.md](context/architecture.md).
+The extension contracts all live in `argus/core` — implement a Protocol and drop the file in
+the matching `*/backends/` folder. See [context/architecture.md](context/architecture.md).
 
 ## Setup
 
@@ -36,8 +39,9 @@ uv sync
 Installs torch/ultralytics/opencv directly (no SSH/private repo needed). torch defaults to
 the **CPU** wheel — reliable everywhere and what the test suite wants; opt into GPU per the
 Docker section below. `yolo11s.pt` auto-downloads on first detector use. Optional extras:
-`--extra face` / `--extra face-gpu` (face-ID), `--extra datasets` (sample-data fetching, needs
-SSH), `--extra notebooks` (marimo).
+`face`/`face-gpu` (face-ID), `store` (sighting DB), `cluster` (re-ID), `audio` (sound
+classification), `open-vocab` (YOLO-World; needs `git`), `mcp` (server), `datasets` (sample
+data, needs SSH), `notebooks` (marimo).
 
 ## Use the SDK
 
@@ -138,6 +142,36 @@ docker compose up -d mcp                     # or containerized (mcp-gpu for GPU
 ```
 
 Step-by-step tutorial (local + Docker, a test client, and connecting Claude Code):
+[context/mcp-server.md](context/mcp-server.md).
+
+## Rehearsal (Docker, end-to-end)
+
+Smoke-test the CLI + MCP tools on real footage. Build the images once with the backends you
+want, then mount one folder at a time (read-only at `/data`).
+
+```bash
+# GPU build with every backend (CPU: TORCH_INDEX=…/whl/cpu and EXTRAS='[face,store,audio,open-vocab]')
+EXTRAS='[face-gpu,store,audio,open-vocab]' docker compose build dev mcp
+```
+
+CLI — tracking + audio:
+```bash
+ARGUS_DATA=/path/to/clips docker compose up -d dev
+docker compose exec dev argus peek  /data --json                                    # triage a folder
+docker compose exec dev argus track /data/CLIP.mp4 --render --json                  # detect + track
+docker compose exec dev argus track /data/CLIP.mp4 --prompt person backpack --json  # open-vocab classes
+docker compose exec dev argus audio /data/CLIP.mp4 --json                           # AST sound labels
+docker compose exec dev argus audio /data/CLIP.mp4 --model laion/clap-htsat-unfused \
+    --labels "gunshot" "glass breaking" "scream" "speech" --json                    # zero-shot CLAP
+```
+
+MCP — same mount, tools over HTTP:
+```bash
+ARGUS_DATA=/path/to/clips docker compose up -d mcp
+uv run python examples/mcp_client_demo.py --url http://127.0.0.1:8000/mcp --dir /data
+```
+
+Face-ID (people clips) is SDK ingest then MCP `search_face` — see
 [context/mcp-server.md](context/mcp-server.md).
 
 ## Notes
