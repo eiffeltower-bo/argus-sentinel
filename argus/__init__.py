@@ -28,16 +28,34 @@ from .core import (
     Detection,
     Detector,
     Embedder,
+    Enrollment,
     FaceDetection,
     FaceDetector,
+    Identity,
+    SearchableStore,
+    SearchHit,
     Sighting,
     Store,
     Track,
     Tracker,
+    WatchlistHit,
 )
 from .detect import OpenVocabularyDetector, UltralyticsDetector
 from .embed import InsightFaceEmbedder
 from .face import InsightFaceDetector, QualityGate, align_chip
+from .identity import (
+    ClusterResult,
+    audit_log,
+    enroll,
+    export_case,
+    label_cluster,
+    merge,
+    purge,
+    reassign,
+    run_clustering,
+    search_by_image,
+    search_by_sighting,
+)
 from .pipeline import (
     IngestResult,
     PeekResult,
@@ -75,6 +93,7 @@ __all__ = [
     "InsightFaceEmbedder",
     # storage
     "Store",
+    "SearchableStore",
     "Sighting",
     "SqliteStore",
     # pipeline
@@ -86,4 +105,20 @@ __all__ = [
     "PeekResult",
     "ingest_video",
     "IngestResult",
+    # identity: search / watchlist / clustering / compliance
+    "Identity",
+    "Enrollment",
+    "SearchHit",
+    "WatchlistHit",
+    "search_by_image",
+    "search_by_sighting",
+    "enroll",
+    "reassign",
+    "merge",
+    "label_cluster",
+    "run_clustering",
+    "ClusterResult",
+    "audit_log",
+    "purge",
+    "export_case",
 ]
