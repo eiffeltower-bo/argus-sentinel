@@ -52,6 +52,8 @@ face-gpu = [
 ]
 # Vector store for persisted face sightings.
 store = ["sqlite-vec>=0.1.6"]
+# Open-set re-ID clustering (run_clustering uses sklearn.cluster.HDBSCAN; lazy-imported).
+cluster = ["scikit-learn>=1.3"]
 # Opt-in sample-data fetching (private repo, needs SSH). Not required to run argus.
 datasets = ["surveillance-datasets[hf,torch,yolo]"]
 # Opt-in notebook authoring (marimo examples).
