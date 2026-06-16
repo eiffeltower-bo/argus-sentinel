@@ -65,11 +65,20 @@ class HuggingFaceAudioClassifier:
         self._pipe = pipeline(task, model=model_name, device=_resolve_device(device, torch))
 
     def classify(self, samples, samplerate, *, top_k: int = 2, candidate_labels=None):
-        inp = {"array": np.asarray(samples, dtype=np.float32), "sampling_rate": int(samplerate)}
+        # Feed an in-memory WAV, not a raw array: transformers ffmpeg-decodes it and resamples to
+        # the model's sample rate. The zero-shot (CLAP) pipeline rejects the {"array","sampling_rate"}
+        # dict and treats a bare ndarray as already-at-model-rate; bytes is correct for both tasks.
+        import io
+
+        import soundfile as sf
+
+        buf = io.BytesIO()
+        sf.write(buf, np.asarray(samples, dtype=np.float32), int(samplerate), format="WAV")
+        wav = buf.getvalue()
         if self.is_zero_shot:
-            raw = self._pipe(inp, candidate_labels=candidate_labels or ["sound"])
+            raw = self._pipe(wav, candidate_labels=candidate_labels or ["sound"])
         else:
-            raw = self._pipe(inp, top_k=top_k)
+            raw = self._pipe(wav, top_k=top_k)
         preds = [AudioPrediction(label=r["label"], confidence=float(r["score"]))
                  for r in raw[:top_k]]
         while len(preds) < top_k:
