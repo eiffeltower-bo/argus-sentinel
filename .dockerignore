@@ -1,7 +1,7 @@
-# Keep the build context small. NOTE: *.pt weights are intentionally NOT ignored — they are
-# gitignored but must enter the build context so the Dockerfile can bake them.
+# Keep the build context small.
 .git
 .gitignore
+*.pt              # model weights auto-download lazily at runtime; not baked into the image
 .venv
 __pycache__/
 *.pyc

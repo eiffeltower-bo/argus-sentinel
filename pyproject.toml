@@ -24,10 +24,11 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "mcp>=1.9"]   # mcp: so `uv run pytest` can import the MCP server
 
 [project.scripts]
 argus = "argus.cli:main"
+argus-mcp = "argus.mcp.server:main"
 
 [project.optional-dependencies]
 # Face-ID detection + embedding backends (insightface). Lazy-imported — NOT needed for
@@ -55,6 +56,9 @@ store = ["sqlite-vec>=0.1.6"]
 datasets = ["surveillance-datasets[hf,torch,yolo]"]
 # Opt-in notebook authoring (marimo examples).
 notebooks = ["jupyter>=1.1.1"]
+# MCP server (argus/mcp/) — a thin HTTP server exposing the triage/track facade as tools.
+# Optional: not pulled by the library, the CLI image, or the CPU test path. `pip install .[mcp]`.
+mcp = ["mcp>=1.9"]
 
 [tool.uv.sources]
 surveillance-datasets = { git = "ssh://git@github.com/eiffeltower-bo/surveillance_datasets.git" }
