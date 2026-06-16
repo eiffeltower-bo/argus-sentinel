@@ -168,3 +168,30 @@ class WatchlistHit:
     distance: float
     score: float
     chip_path: str
+
+
+@dataclass(frozen=True)
+class AudioPrediction:
+    """One ranked class prediction for an audio segment: a label and confidence in ``[0, 1]``."""
+
+    label: str
+    confidence: float
+
+
+@dataclass(frozen=True)
+class AudioSegment:
+    """One analyzed audio window: its time span and the top-k ranked predictions.
+
+    ``start_time``/``end_time`` are seconds from the start of the audio. ``predictions`` are
+    ranked best-first; backends keep the top-k and pad to a fixed width with ``confidence`` 0.0
+    so every segment has the same shape.
+    """
+
+    segment_index: int
+    start_time: float
+    end_time: float
+    predictions: tuple[AudioPrediction, ...] = ()
+
+    @property
+    def top(self) -> AudioPrediction | None:
+        return self.predictions[0] if self.predictions else None

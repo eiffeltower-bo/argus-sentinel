@@ -9,6 +9,7 @@ import pytest
 from dataclasses import replace
 
 from argus.core import (
+    AudioPrediction,
     Detection,
     Enrollment,
     FaceDetection,
@@ -119,6 +120,28 @@ class FakeEmbedder:
             out[i] = base * (np.arange(self.dim, dtype=np.float32) + 1.0)
         norms = np.linalg.norm(out, axis=1, keepdims=True)
         return out / np.clip(norms, 1e-12, None)
+
+
+class ScriptedAudioClassifier:
+    """A fake ``AudioClassifier`` with deterministic predictions and no heavy deps.
+
+    Records every ``(n_samples, samplerate)`` it is called with, so tests can assert which
+    segments the orchestrator actually fed it (windowing / overlap / tail / <100-sample skip).
+    """
+
+    classifier_id = "fake_audio_v1"
+    is_zero_shot = False
+
+    def __init__(self, label: str = "speech", confidence: float = 0.9) -> None:
+        self.calls: list[tuple[int, int]] = []
+        self._label, self._conf = label, confidence
+
+    def classify(self, samples, samplerate, *, top_k: int = 2, candidate_labels=None):
+        self.calls.append((len(samples), int(samplerate)))
+        preds = [AudioPrediction(self._label, self._conf)]
+        while len(preds) < top_k:
+            preds.append(AudioPrediction("None", 0.0))
+        return preds
 
 
 class FakeStore:

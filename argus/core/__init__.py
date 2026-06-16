@@ -4,6 +4,7 @@ Dependency-free and import-light — everything else in the SDK builds on top of
 """
 
 from .protocols import (
+    AudioClassifier,
     Detector,
     Embedder,
     FaceDetector,
@@ -13,6 +14,8 @@ from .protocols import (
 )
 from .taxonomy import CATEGORY_BY_CLASS, COCO_LABELS, TARGET_CLASSES, classes_for
 from .types import (
+    AudioPrediction,
+    AudioSegment,
     Detection,
     Enrollment,
     FaceDetection,
@@ -32,10 +35,13 @@ __all__ = [
     "Enrollment",
     "SearchHit",
     "WatchlistHit",
+    "AudioPrediction",
+    "AudioSegment",
     "Detector",
     "Tracker",
     "FaceDetector",
     "Embedder",
+    "AudioClassifier",
     "Store",
     "SearchableStore",
     "COCO_LABELS",

@@ -1,5 +1,6 @@
-"""Orchestration: video tracking and fast peek triage, plus their result types."""
+"""Orchestration: video tracking, fast peek triage, ingest, and audio, plus their result types."""
 
+from .audio import AudioAnalysis, analyze_audio
 from .ingest import IngestResult, ingest_video
 from .peek import PeekResult, peek_video, peek_videos
 from .tracking import TrackingResult, VideoTracker, edge_of, track_color, track_video
@@ -15,4 +16,6 @@ __all__ = [
     "peek_videos",
     "ingest_video",
     "IngestResult",
+    "AudioAnalysis",
+    "analyze_audio",
 ]
