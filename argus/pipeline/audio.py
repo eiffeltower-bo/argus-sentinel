@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ..audio.extract import extract_audio, is_video
 from ..core import AudioClassifier, AudioSegment
 
 

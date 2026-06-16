@@ -128,6 +128,19 @@ def test_extract_audio_missing_input_raises(tmp_path):
         extract_audio(tmp_path / "nope.mp4")
 
 
+def test_analyze_audio_missing_video_hits_extract_path(tmp_path):
+    # Real-decode entry (no _samples): a video path routes through is_video -> extract_audio.
+    # Guards the import wiring those names into pipeline/audio.py (regression: NameError).
+    with pytest.raises(FileNotFoundError):
+        analyze_audio(tmp_path / "nope.mp4")
+
+
+def test_analyze_audio_missing_audio_file_raises(tmp_path):
+    # Non-video path: is_video False -> existence check raises (also exercises is_video).
+    with pytest.raises(FileNotFoundError):
+        analyze_audio(tmp_path / "nope.wav")
+
+
 # ---- optional integration (downloads a model; opt-in) ---------------------------------
 
 @pytest.mark.skipif(not os.environ.get("ARGUS_RUN_MODEL_TESTS"),
