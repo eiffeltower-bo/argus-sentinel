@@ -26,13 +26,17 @@ from argus.core import Detection, Detector
 class MinConfidence:
     """A Detector that wraps another and drops low-confidence detections.
 
-    Implements ``argus.core.Detector`` (just ``.detect(frame) -> list[Detection]``), so it
-    slots into ``VideoTracker`` / ``track_video`` anywhere a detector is expected.
+    Implements ``argus.core.Detector`` (``.detect(frame) -> list[Detection]`` + ``.targets``),
+    so it slots into ``VideoTracker`` / ``track_video`` anywhere a detector is expected.
     """
 
     def __init__(self, inner: Detector, min_score: float = 0.5) -> None:
         self.inner = inner
         self.min_score = min_score
+
+    @property
+    def targets(self) -> tuple[str, ...]:
+        return self.inner.targets
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         return [d for d in self.inner.detect(frame) if d.score >= self.min_score]
@@ -49,7 +53,7 @@ def main() -> None:
 
     base = OpenVocabularyDetector(weights="yolov8s-worldv2.pt", prompt=args.prompt, device=args.device)
     detector = MinConfidence(base, min_score=args.min_score)   # <- custom backend, drops in freely
-    tracker = ByteTrackTracker(labels=base.model.names)  # <- standard ByteTrack, but with labels from the detector's vocab
+    tracker = ByteTrackTracker(labels=base.model.names, categories=base.model.names)  # open-vocab: labels == categories
 
     result = VideoTracker(detector, tracker, max_frames=args.max_frames).run(args.video)
     print(f"{args.video.name}: {len(result.track_ids)} tracks (conf >= {args.min_score})")

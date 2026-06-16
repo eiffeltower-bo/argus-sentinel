@@ -24,6 +24,9 @@ class Detector(Protocol):
     throughput (used by ``peek_videos`` when present); it is not required by this protocol.
     """
 
+    @property
+    def targets(self) -> tuple[str, ...]: ...
+
     def detect(self, frame: np.ndarray) -> list[Detection]: ...
 
 
