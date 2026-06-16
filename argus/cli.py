@@ -2,9 +2,12 @@
 
 Subcommands mirror the public functions:
 
-    argus peek  FOLDER  [--targets ...] [--glob '*.mp4'] [--device cuda] [--workers N] [--json]
-    argus track VIDEO   [--targets ...] [--device cuda] [--max-frames N] [--render OUT] [--json]
+    argus peek  FOLDER  [--targets ... | --prompt TEXT] [--glob '*.mp4'] [--device cuda] [--workers N] [--json]
+    argus track VIDEO   [--targets ... | --prompt TEXT] [--device cuda] [--max-frames N] [--render OUT] [--json]
     argus audio CLIP    [--model M] [--overlap S] [--segment S] [--labels ...] [--device cuda] [--json]
+
+``--prompt`` swaps the fixed COCO detector for the open-vocabulary YOLO-World detector
+(detect an arbitrary text class, e.g. ``--prompt "forklift"``), overriding ``--targets``.
 
 It is a pure dispatch layer: it imports only the cheap re-exports from ``argus`` (heavy libs
 stay lazy inside the backends) and adds no logic of its own, so a future FastAPI/MCP server can
@@ -19,7 +22,7 @@ import json
 import sys
 from pathlib import Path
 
-from argus import analyze_audio, peek_videos, track_video
+from argus import OpenVocabularyDetector, analyze_audio, peek_videos, track_video
 
 _TARGETS = ("person", "vehicle")
 
@@ -28,6 +31,8 @@ def _add_common(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--targets", nargs="+", default=list(_TARGETS), choices=list(_TARGETS),
                     help="COCO class groups that count as interesting")
     ap.add_argument("--device", default=None, help="'cuda', 'cpu', ... (default: auto-detect)")
+    ap.add_argument("--prompt", default=None,
+                    help="open-vocabulary text class (YOLO-World); overrides --targets")
     ap.add_argument("--json", action="store_true", help="emit one JSON object to stdout")
 
 
@@ -36,9 +41,13 @@ def _peek(args: argparse.Namespace) -> int:
     if not clips:
         raise SystemExit(f"no files matching {args.glob!r} in {args.folder}")
 
-    results = peek_videos(
-        clips, targets=tuple(args.targets), device=args.device, max_workers=args.workers
-    )
+    if args.prompt:
+        det = OpenVocabularyDetector(args.prompt, device=args.device)
+        results = peek_videos(clips, detector=det, max_workers=args.workers)
+    else:
+        results = peek_videos(
+            clips, targets=tuple(args.targets), device=args.device, max_workers=args.workers
+        )
     interesting = {p: r for p, r in results.items() if r and r.interesting}
     unreadable = [p for p, r in results.items() if r is None]
 
@@ -62,10 +71,14 @@ def _peek(args: argparse.Namespace) -> int:
 
 
 def _track(args: argparse.Namespace) -> int:
-    result = track_video(
-        args.video, targets=tuple(args.targets),
-        device=args.device, max_frames=args.max_frames,
-    )
+    if args.prompt:
+        det = OpenVocabularyDetector(args.prompt, device=args.device)
+        result = track_video(args.video, detector=det, max_frames=args.max_frames)
+    else:
+        result = track_video(
+            args.video, targets=tuple(args.targets),
+            device=args.device, max_frames=args.max_frames,
+        )
     rendered = None
     if args.render is not None:
         out = Path(args.render) if args.render else Path("out") / f"{args.video.stem}_tracked.mp4"
