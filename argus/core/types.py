@@ -101,3 +101,70 @@ class Sighting:
     identity_id: int | None = None
     cluster_id: int | None = None
     id: int | None = None
+
+
+@dataclass(frozen=True)
+class Identity:
+    """A person the store knows about: an enrolled watchlist entry or an auto-formed cluster.
+
+    ``type`` is ``"known"`` (manually enrolled, named) or ``"provisional"`` (a clustering run
+    grouped unlabeled sightings into a candidate person). ``id`` is assigned on insert.
+    """
+
+    type: str
+    label: str | None = None
+    created_by: str | None = None
+    created_at: str | None = None
+    notes: str | None = None
+    id: int | None = None
+
+
+@dataclass(frozen=True)
+class Enrollment:
+    """A reference face for a known ``Identity`` — the watchlist gallery row.
+
+    Holds the chip path + the embedding space it was embedded in; the vector itself lives in
+    the store's vector index. ``source`` notes provenance (``"id_photo"``/``"footage_still"``).
+    """
+
+    identity_id: int
+    chip_path: str
+    embedding_space_id: str
+    source: str | None = None
+    id: int | None = None
+
+
+@dataclass(frozen=True, eq=False)
+class SearchHit:
+    """One ranked search result: a matched ``Sighting`` plus its similarity to the probe.
+
+    ``distance`` is the raw vector distance (cosine distance — vectors are L2-normalized);
+    ``score`` is ``1 - distance`` (cosine similarity in ``[0, 1]``) for thresholds/UI. The
+    chip/camera/ts are surfaced for human adjudication ("evidence").
+    """
+
+    sighting: Sighting
+    distance: float
+    score: float
+
+    @property
+    def chip_path(self) -> str:
+        return self.sighting.chip_path
+
+    @property
+    def camera_id(self) -> str:
+        return self.sighting.camera_id
+
+    @property
+    def ts(self) -> float:
+        return self.sighting.ts
+
+
+@dataclass(frozen=True)
+class WatchlistHit:
+    """A ranked watchlist match: which enrolled ``Identity`` a probe face resembles."""
+
+    identity: Identity
+    distance: float
+    score: float
+    chip_path: str
