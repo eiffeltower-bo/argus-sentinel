@@ -13,12 +13,22 @@ changes. Transport is **streamable HTTP**; the endpoint is `/mcp`.
 | `peek_clip(path, targets, n_samples, min_hits, device)` | Fast-triage one clip → verdict + per-category counts + `interesting` bool. | cheap |
 | `track_clip(path, targets, max_frames, stride, render, device)` | Detect + track through a clip → per-track metrics; `render=true` also writes an annotated H.264 clip. | heavy |
 | `search_face(image, top_k, cameras, since, min_quality, device, actor)` | Re-identify a probe face across **already-ingested** footage → ranked hits (cosine `score` + evidence `chip_path`). Candidates for human review, never an automated match. | medium |
+| `ingest_clip(path, camera_id, device, conf, stride, face_stride, max_frames, min_face_px, min_blur_var, max_yaw_ratio, min_det_score)` | Populate the sighting store: detect→track→embed the best face per track → persist. The footage `search_face`/`search_similar` query. Heavy; bound with `max_frames`/`stride`. Needs `face`+`store`. | heavy |
+| `search_similar(sighting_id, top_k, cameras, since, min_quality, actor)` | "More like this": find more sightings of the person in an existing sighting (uses its stored embedding — no probe image). | medium |
+| `list_sightings(cameras, min_quality, limit)` | List stored sightings (metadata + evidence `chip_path`, no vectors). Discover sighting ids for `search_similar`. | cheap |
+| `list_identities(type)` | List identities — `known` (enrolled) + `provisional` (clusters); filter by `type`. | cheap |
+| `enroll_identity(label, images, source, device, actor)` | Enroll a known person from face photos into the watchlist gallery → new identity id. Needs `face`+`store`. | medium |
+| `cluster_sightings(space_id, min_cluster_size, min_samples, include_assigned, actor)` | Group unlabeled sightings into provisional identities (HDBSCAN). Needs the `cluster` extra. | medium |
+| `audit_log(actor, since)` | Read the compliance audit trail (every search/enroll/cluster/assignment is logged). | trivial |
 | `classify_audio(path, model, overlap_seconds, segment_seconds, top_k, candidate_labels, device)` | Classify a clip's **audio** track into per-segment sound labels (AST/ESC-50, or zero-shot CLAP via `candidate_labels`). Needs the `audio` extra. | medium |
 
 Intended agent flow: `list_clips` → `peek_folder`/`peek_clip` (cheap) → `track_clip` only the
-interesting ones. `search_face` is the face-ID path: it queries the sighting DB (`ARGUS_DB`)
-populated by ingest, so footage must be ingested before it returns anything. `classify_audio` is
-the audio path: it extracts and labels the sound track of a clip directly (no ingest needed).
+interesting ones. The face-ID path runs over the sighting DB (`ARGUS_DB`): `ingest_clip` populates
+it, then `list_sightings`/`list_identities` browse it, `search_face` (probe image) and
+`search_similar` (existing sighting) re-identify faces, `enroll_identity`/`cluster_sightings` build
+the identity gallery, and `audit_log` reads the compliance trail — so footage must be ingested
+before search returns anything. `classify_audio` is the audio path: it extracts and labels the
+sound track of a clip directly (no ingest needed).
 **All paths are server-side** (in Docker, footage is mounted at `/data`). `device=None` (default)
 auto-selects the GPU when GPU torch is installed, else CPU.
 
@@ -115,7 +125,10 @@ RFC 9728 Protected Resource Metadata document and the `401 WWW-Authenticate` cha
 
 **Scopes are per-tool.** Beyond a valid token, each tool needs its own scope:
 `argus:peek` (`list_clips`/`peek_folder`/`peek_clip`), `argus:track` (`track_clip`),
-`argus:search` (`search_face`), `argus:audio` (`classify_audio`). A valid token missing a tool's
+`argus:search` (`search_face`/`search_similar`), `argus:audio` (`classify_audio`),
+`argus:read` (`list_sightings`/`list_identities`), `argus:audit` (`audit_log` — note: distinct
+from `argus:audio`), and the write scopes `argus:ingest` (`ingest_clip`), `argus:enroll`
+(`enroll_identity`), `argus:cluster` (`cluster_sightings`). A valid token missing a tool's
 scope yields an **MCP tool error** ("insufficient scope") — not an HTTP `403` (all tools share the
 one `POST /mcp` route). HTTP `403 insufficient_scope` is reserved for the SDK's blanket
 `ARGUS_OAUTH_SCOPES`.
@@ -203,9 +216,19 @@ Tool results arrive both as `structuredContent` (a dict) and as text in `content
   metrics…], rendered}`. Each track row: `id, category, type, first_s, last_s, duration_s,
   n_frames, continuity, avg_*, entry_edge, exit_edge`. `rendered` is the server-side path of the
   annotated clip when `render=true`, else `null`.
-- **`search_face`** → `{query, n_hits, hits:[…]}`. Each hit: `sighting_id, score` (cosine, 0–1),
-  `distance, camera_id, ts, video_id, track_id, frame_idx, bbox, quality, chip_path, identity_id,
-  cluster_id`. `chip_path` is the server-side aligned-face image for operator review.
+- **`search_face`** / **`search_similar`** → `{query, n_hits, hits:[…]}`. Each hit: `sighting_id,
+  score` (cosine, 0–1), `distance, camera_id, ts, video_id, track_id, frame_idx, bbox, quality,
+  chip_path, identity_id, cluster_id`. `chip_path` is the server-side aligned-face image for operator
+  review. (`search_similar`'s `query` is `"sighting:<id>"`.)
+- **`ingest_clip`** → `{video_id, video_path, n_frames, n_tracks, n_faces_detected, n_gated_out,
+  n_sightings, avg_quality, summary}`.
+- **`list_sightings`** → `{n, sightings:[{id, video_id, camera_id, track_id, frame_idx, ts, x1, y1,
+  x2, y2, quality, chip_path, embedding_space_id, identity_id, cluster_id, created_at}, …]}` (no
+  embedding vector).
+- **`list_identities`** → `{n, identities:[{id, type, label, created_by, created_at, notes}, …]}`.
+- **`enroll_identity`** → `{identity_id, label, n_images}`.
+- **`cluster_sightings`** → `{n_sightings, n_clusters, n_noise, run_id, identity_ids:[…], summary}`.
+- **`audit_log`** → `{n, rows:[{id, actor, action, target_type, target_id, query_ref, details, ts}, …]}`.
 - **`classify_audio`** → `{input_file, audio_path, input_duration_seconds, model_name,
   overlap_seconds, segment_seconds, segments:[…]}`. Each segment: `{segment_index, start_time,
   end_time, predictions:[{class, confidence}, …]}` (top-`top_k`, ranked best-first).

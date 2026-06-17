@@ -1,10 +1,13 @@
 """MCP server exposing argus' triage/track facade as tools (streamable HTTP).
 
-A pure consumer of the public facade — the MCP analogue of ``argus/cli.py``. Six read-mostly
-tools let an agent discover footage and run the cheap-then-expensive surveillance workflow
-(``list_clips`` -> ``peek_folder``/``peek_clip`` -> ``track_clip``), plus ``search_face`` to
-re-identify a probe face across already-ingested footage and ``classify_audio`` to label a clip's
-sound track. Run it with:
+A pure consumer of the public facade — the MCP analogue of ``argus/cli.py``. The triage/track
+tools let an agent discover footage and run the cheap-then-expensive workflow (``list_clips`` ->
+``peek_folder``/``peek_clip`` -> ``track_clip``), plus ``classify_audio`` for the sound track. A
+face-ID group mirrors the CLI's store-backed verbs over ``ARGUS_DB``: ``ingest_clip`` populates the
+sighting store; ``list_sightings``/``list_identities`` browse it; ``search_face`` (probe image) and
+``search_similar`` (existing sighting) re-identify faces; ``enroll_identity`` and
+``cluster_sightings`` build the identity gallery; ``audit_log`` reads the compliance trail. Run it
+with:
 
     argus-mcp --host 0.0.0.0 --port 8000     # serves MCP over HTTP at /mcp
 
@@ -27,15 +30,31 @@ from mcp.server.transport_security import TransportSecuritySettings
 from argus import (
     DEFAULT_AUDIO_MODEL,
     OpenVocabularyDetector,
+    QualityGate,
     analyze_audio,
+    audit_log as _audit_log,  # tool below is named `audit_log`; alias the facade to avoid shadowing
+    enroll,
+    ingest_video,
     peek_video,
     peek_videos,
+    run_clustering,
     search_by_image,
+    search_by_sighting,
     track_video,
 )
 from argus.core import TARGET_CLASSES
 
-from ._serialize import audio_to_dict, peek_to_dict, search_to_dict, tracking_to_dict
+from ._serialize import (
+    audio_to_dict,
+    audit_to_dict,
+    cluster_to_dict,
+    identities_to_dict,
+    ingest_to_dict,
+    peek_to_dict,
+    search_to_dict,
+    sightings_to_dict,
+    tracking_to_dict,
+)
 from .auth import (
     AuthConfig,
     TOOL_SCOPES,
@@ -254,6 +273,205 @@ def search_face(
 
 
 @mcp.tool()
+def ingest_clip(
+    path: str,
+    camera_id: str,
+    device: str | None = None,
+    conf: float = 0.25,
+    stride: int = 1,
+    face_stride: int = 1,
+    max_frames: int | None = None,
+    min_face_px: float | None = None,
+    min_blur_var: float | None = None,
+    max_yaw_ratio: float | None = None,
+    min_det_score: float | None = None,
+) -> dict[str, Any]:
+    """Ingest one clip into the face store: detect→track people, embed the best face per track.
+
+    Writes one ``Sighting`` (512-d ArcFace vector + metadata + an aligned face chip) per tracked
+    person to ``ARGUS_DB`` — the footage ``search_face``/``search_similar`` then query. HEAVY: it
+    decodes the whole clip and runs detection + the face stage; bound long clips with
+    ``max_frames``/``stride``. The quality-gate floors (``min_face_px``/``min_blur_var``/
+    ``max_yaw_ratio``/``min_det_score``) default to the calibrated values when left null — lower the
+    size/blur floors to admit smaller, softer faces on distant-camera footage. ``path`` is
+    server-side. Needs the ``face`` + ``store`` extras.
+    """
+    require_scope(TOOL_SCOPES["ingest_clip"])
+    overrides = {
+        "min_face_px": min_face_px,
+        "min_blur_var": min_blur_var,
+        "max_yaw_ratio": max_yaw_ratio,
+        "min_det_score": min_det_score,
+    }
+    gate = QualityGate(**{k: v for k, v in overrides.items() if v is not None})
+    store = _open_store()
+    try:
+        r = ingest_video(
+            Path(path),
+            camera_id,
+            store=store,
+            gate=gate,
+            device=device,
+            conf=conf,
+            stride=stride,
+            face_stride=face_stride,
+            max_frames=max_frames,
+        )
+        return ingest_to_dict(r)
+    finally:
+        store.close()
+
+
+@mcp.tool()
+def list_sightings(
+    cameras: list[str] | None = None,
+    min_quality: float = 0.0,
+    limit: int | None = 100,
+) -> dict[str, Any]:
+    """List stored face sightings (metadata only) from ``ARGUS_DB`` for inspection.
+
+    Each row carries camera/timestamp/quality and the evidence ``chip_path`` — no embedding vector.
+    Optionally filter by ``cameras`` / ``min_quality``; ``limit`` caps the rows returned (default
+    100, pass null for all). Use this to discover sighting ids to feed ``search_similar``.
+    """
+    require_scope(TOOL_SCOPES["list_sightings"])
+    store = _open_store()
+    try:
+        rows = store.list_sightings()
+        if cameras:
+            rows = [s for s in rows if s["camera_id"] in cameras]
+        if min_quality > 0.0:
+            rows = [s for s in rows if (s["quality"] or 0.0) >= min_quality]
+        if limit is not None:
+            rows = rows[:limit]
+        return sightings_to_dict(rows)
+    finally:
+        store.close()
+
+
+@mcp.tool()
+def list_identities(type: str | None = None) -> dict[str, Any]:
+    """List stored identities (``known`` enrolled + ``provisional`` clusters) from ``ARGUS_DB``.
+
+    Optionally filter by ``type`` (``"known"`` or ``"provisional"``). Identities are created by
+    ``enroll_identity`` (known) and ``cluster_sightings`` (provisional).
+    """
+    require_scope(TOOL_SCOPES["list_identities"])
+    store = _open_store()
+    try:
+        return identities_to_dict(store.list_identities(type=type))
+    finally:
+        store.close()
+
+
+@mcp.tool()
+def search_similar(
+    sighting_id: int,
+    top_k: int = 20,
+    cameras: list[str] | None = None,
+    since: float | None = None,
+    min_quality: float = 0.0,
+    actor: str = "mcp",
+) -> dict[str, Any]:
+    """Find more sightings of the person in an existing sighting ("more like this").
+
+    Uses the stored embedding of ``sighting_id`` (no probe image needed) and excludes that sighting
+    from the results. Same filters/ranking as ``search_face``; returns ranked hits with cosine
+    ``score`` + evidence ``chip_path`` for human review. The search is audited.
+    """
+    require_scope(TOOL_SCOPES["search_similar"])
+    store = _open_store()
+    try:
+        hits = search_by_sighting(
+            sighting_id,
+            store=store,
+            top_k=top_k,
+            cameras=cameras,
+            since=since,
+            min_quality=min_quality,
+            actor=actor,
+        )
+        return search_to_dict(f"sighting:{sighting_id}", hits)
+    finally:
+        store.close()
+
+
+@mcp.tool()
+def enroll_identity(
+    label: str,
+    images: list[str],
+    source: str = "id_photo",
+    device: str | None = None,
+    actor: str = "mcp",
+) -> dict[str, Any]:
+    """Enroll a known person into the watchlist gallery from one or more face photos.
+
+    Creates a ``known`` identity, embeds each image's strongest face, and stores an enrollment (with
+    its aligned chip). ``images`` are server-side paths. Returns the new identity id. Audited; needs
+    the ``face`` + ``store`` extras.
+    """
+    require_scope(TOOL_SCOPES["enroll_identity"])
+    store = _open_store()
+    try:
+        identity_id = enroll(
+            label,
+            [Path(i) for i in images],
+            store=store,
+            source=source,
+            device=device,
+            actor=actor,
+        )
+        return {"identity_id": identity_id, "label": label, "n_images": len(images)}
+    finally:
+        store.close()
+
+
+@mcp.tool()
+def cluster_sightings(
+    space_id: str = "arcface_w600k_r50_v1",
+    min_cluster_size: int = 5,
+    min_samples: int | None = None,
+    include_assigned: bool = False,
+    actor: str = "mcp",
+) -> dict[str, Any]:
+    """Group unlabeled sightings into provisional identities (HDBSCAN over the embeddings).
+
+    Each dense cluster becomes a ``provisional`` identity an operator can later name or merge.
+    ``space_id`` is the embedding space (ArcFace by default). By default only not-yet-identified
+    sightings are clustered; set ``include_assigned`` to cluster all. Audited; needs the ``cluster``
+    extra (scikit-learn).
+    """
+    require_scope(TOOL_SCOPES["cluster_sightings"])
+    store = _open_store()
+    try:
+        r = run_clustering(
+            store=store,
+            space_id=space_id,
+            min_cluster_size=min_cluster_size,
+            min_samples=min_samples,
+            only_unassigned=not include_assigned,
+            actor=actor,
+        )
+        return cluster_to_dict(r)
+    finally:
+        store.close()
+
+
+@mcp.tool()
+def audit_log(actor: str | None = None, since: str | None = None) -> dict[str, Any]:
+    """Read the compliance audit trail (every search/enroll/cluster/assignment is logged).
+
+    Optionally filter by ``actor`` and/or ``since`` (ISO timestamp; rows with ``ts >= since``).
+    """
+    require_scope(TOOL_SCOPES["audit_log"])
+    store = _open_store()
+    try:
+        return audit_to_dict(_audit_log(store=store, actor=actor, since=since))
+    finally:
+        store.close()
+
+
+@mcp.tool()
 def classify_audio(
     path: str,
     model: str = DEFAULT_AUDIO_MODEL,
@@ -332,9 +550,24 @@ def _transport_security(
     )
 
 
-# The six tool functions, in registration order. Used to re-register them on a fresh FastMCP
-# instance when auth is enabled (the module-level ``mcp`` has no token verifier).
-_TOOLS = [list_clips, peek_folder, peek_clip, track_clip, search_face, classify_audio]
+# The tool functions, in registration order. Used to re-register them on a fresh FastMCP instance
+# when auth is enabled (the module-level ``mcp`` has no token verifier). Keep in sync with
+# ``TOOL_SCOPES`` in auth.py (tests/test_mcp.py::test_all_tools_have_scopes enforces this).
+_TOOLS = [
+    list_clips,
+    peek_folder,
+    peek_clip,
+    track_clip,
+    search_face,
+    search_similar,
+    ingest_clip,
+    list_sightings,
+    list_identities,
+    enroll_identity,
+    cluster_sightings,
+    audit_log,
+    classify_audio,
+]
 
 
 def build_server(cfg: AuthConfig) -> FastMCP:

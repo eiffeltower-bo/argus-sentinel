@@ -35,6 +35,16 @@ TOOL_SCOPES: dict[str, str] = {
     "track_clip": "argus:track",
     "search_face": "argus:search",
     "classify_audio": "argus:audio",
+    # Face-ID over the sighting store. Reads share argus:read; search reuses argus:search; the
+    # write/mutating ops get their own scope so an operator can grant them narrowly. Note
+    # argus:audit (compliance trail) is distinct from argus:audio (sound classification).
+    "ingest_clip": "argus:ingest",
+    "list_sightings": "argus:read",
+    "list_identities": "argus:read",
+    "search_similar": "argus:search",
+    "enroll_identity": "argus:enroll",
+    "cluster_sightings": "argus:cluster",
+    "audit_log": "argus:audit",
 }
 
 # Set by ``server.main()`` from ``ARGUS_MCP_AUTH``. When False, ``require_scope`` is a no-op so the

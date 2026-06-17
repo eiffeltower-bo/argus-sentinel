@@ -7,12 +7,21 @@ JSON-serializable), and every ``Path`` -> ``str``.
 
 from __future__ import annotations
 
+import dataclasses
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from argus import AudioAnalysis, PeekResult, SearchHit, TrackingResult
+    from argus import (
+        AudioAnalysis,
+        ClusterResult,
+        IngestResult,
+        Identity,
+        PeekResult,
+        SearchHit,
+        TrackingResult,
+    )
 
 
 def peek_to_dict(r: PeekResult) -> dict:
@@ -82,6 +91,52 @@ def search_to_dict(query_ref: str, hits: Sequence[SearchHit]) -> dict:
         "n_hits": len(hits),
         "hits": [_hit_to_dict(h) for h in hits],
     }
+
+
+def ingest_to_dict(r: IngestResult) -> dict:
+    """An ``IngestResult`` as a JSON-able dict: per-run counts + the one-line summary."""
+    return {
+        "video_id": r.video_id,
+        "video_path": str(r.video_path),
+        "n_frames": r.n_frames,
+        "n_tracks": r.n_tracks,
+        "n_faces_detected": r.n_faces_detected,
+        "n_gated_out": r.n_gated_out,
+        "n_sightings": r.n_sightings,
+        "avg_quality": r.avg_quality,
+        "summary": r.summary(),
+    }
+
+
+def sightings_to_dict(rows: list[dict]) -> dict:
+    """Stored sighting rows (metadata only) as a JSON-able dict.
+
+    ``rows`` are ``store.list_sightings()`` output — plain column dicts (no embedding vector),
+    already JSON-able; we just wrap them with a count.
+    """
+    return {"n": len(rows), "sightings": rows}
+
+
+def identities_to_dict(idents: Sequence[Identity]) -> dict:
+    """Stored ``Identity`` records as a JSON-able dict (dataclass -> dict per row)."""
+    return {"n": len(idents), "identities": [dataclasses.asdict(i) for i in idents]}
+
+
+def cluster_to_dict(r: ClusterResult) -> dict:
+    """A ``ClusterResult`` as a JSON-able dict: cluster/noise counts + new identity ids."""
+    return {
+        "n_sightings": r.n_sightings,
+        "n_clusters": r.n_clusters,
+        "n_noise": r.n_noise,
+        "run_id": r.run_id,
+        "identity_ids": list(r.identity_ids),
+        "summary": r.summary(),
+    }
+
+
+def audit_to_dict(rows: list[dict]) -> dict:
+    """Audit-log rows (already JSON-able column dicts) wrapped with a count."""
+    return {"n": len(rows), "rows": rows}
 
 
 def audio_to_dict(r: AudioAnalysis) -> dict:
