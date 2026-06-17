@@ -29,7 +29,8 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8.0", "mcp>=1.9"]   # mcp: so `uv run pytest` can import the MCP server
+# mcp: so `uv run pytest` can import the MCP server. ruff: lint + format, enforced in CI.
+dev = ["pytest>=8.0", "mcp>=1.9", "ruff>=0.10"]
 
 [project.scripts]
 argus = "argus.cli:main"
@@ -93,6 +94,12 @@ explicit = true
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.ruff]
+# 99 matches the codebase's existing norm (only a handful of lines exceed it).
+line-length = 99
+target-version = "py312"
+# Default rule set (pycodestyle E + pyflakes F). Import-sorting (I) can be enabled later.
 
 [tool.marimo.runtime]
 # Headroom for embedded video output (we downscale displayed videos, but allow margin).

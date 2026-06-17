@@ -1,0 +1,44 @@
+name: CI
+
+# Lint + tests on every push to main and on pull requests. CPU-only: torch resolves to the
+# CPU wheel index pinned in pyproject ([tool.uv.sources]), so no CUDA setup is needed.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch/PR cancels the older in-flight run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install dev tooling
+        run: uv sync --frozen
+      - name: Ruff lint
+        run: uv run ruff check .
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      # Install the opt-in extras whose test paths would otherwise be skipped/error on a clean
+      # runner. The heavy `face` extra (insightface/onnxruntime) is intentionally excluded.
+      - name: Sync deps (core + extras)
+        run: uv sync --frozen --extra store --extra cluster --extra mcp
+      - name: Run tests
+        run: uv run pytest -q
