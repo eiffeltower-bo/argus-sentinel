@@ -52,8 +52,13 @@ class QualityGate:
     blends face size, sharpness (Laplacian variance), frontality, and detector confidence.
     """
 
-    min_face_px: float = 40.0
-    min_blur_var: float = 40.0
+    # Calibrated on 640x480 CCTV (the shoplifting_dataset): SCRFD face crops there run ~28 px
+    # median (p10 14, p90 39) and blur-var ~40 median, while det_score (p10 0.65) and yaw
+    # (p90 0.15) sit well clear of their floors. So size/blur are the binding constraints — the
+    # old 40 px / 40 blur floors rejected ~90% of faces and starved whole clips of sightings.
+    # Detector confidence is healthy at the SCRFD default, so those two floors are left strict.
+    min_face_px: float = 28.0
+    min_blur_var: float = 25.0
     max_yaw_ratio: float = 0.35
     min_det_score: float = 0.5
     # References at which each sub-score saturates to 1.0.
