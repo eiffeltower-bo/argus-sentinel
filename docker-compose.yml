@@ -72,6 +72,9 @@ services:
       ARGUS_MCP_ALLOWED_HOSTS: ${ARGUS_MCP_ALLOWED_HOSTS:-}
       ARGUS_MCP_ALLOWED_ORIGINS: ${ARGUS_MCP_ALLOWED_ORIGINS:-}
       ARGUS_MCP_INSECURE: ${ARGUS_MCP_INSECURE:-}
+      # Persistent sighting store for the face-ID tools (ingest_clip/search_*/…). Defaults under the
+      # bind-mounted ./out so the DB + face chips survive container restarts.
+      ARGUS_DB: ${ARGUS_DB:-/app/out/argus.db}
       # OAuth 2.1 (Resource Server). Off by default; flip ARGUS_MCP_AUTH=on (+ bring up the
       # keycloak service) to require tokens. See the "hostname" note below / mcp-server.md.
       ARGUS_MCP_AUTH: ${ARGUS_MCP_AUTH:-off}
