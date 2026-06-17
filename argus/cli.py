@@ -23,17 +23,32 @@ import json
 import sys
 from pathlib import Path
 
-from argus import OpenVocabularyDetector, analyze_audio, peek_videos, track_video
+from argus import (
+    DEFAULT_AUDIO_MODEL,
+    OpenVocabularyDetector,
+    analyze_audio,
+    peek_videos,
+    track_video,
+)
 
 _TARGETS = ("person", "vehicle")
 
 
 def _add_common(ap: argparse.ArgumentParser) -> None:
-    ap.add_argument("--targets", nargs="+", default=list(_TARGETS), choices=list(_TARGETS),
-                    help="COCO class groups that count as interesting")
+    ap.add_argument(
+        "--targets",
+        nargs="+",
+        default=list(_TARGETS),
+        choices=list(_TARGETS),
+        help="COCO class groups that count as interesting",
+    )
     ap.add_argument("--device", default=None, help="'cuda', 'cpu', ... (default: auto-detect)")
-    ap.add_argument("--prompt", nargs="+", default=None,
-                    help="open-vocabulary text class(es) (YOLO-World); overrides --targets")
+    ap.add_argument(
+        "--prompt",
+        nargs="+",
+        default=None,
+        help="open-vocabulary text class(es) (YOLO-World); overrides --targets",
+    )
     ap.add_argument("--json", action="store_true", help="emit one JSON object to stdout")
 
 
@@ -53,14 +68,18 @@ def _peek(args: argparse.Namespace) -> int:
     unreadable = [p for p, r in results.items() if r is None]
 
     if args.json:
-        print(json.dumps({
-            "clips": len(clips),
-            "interesting": [
-                {"path": str(p), "counts": r.counts, "summary": r.summary()}
-                for p, r in sorted(interesting.items())
-            ],
-            "unreadable": [str(p) for p in unreadable],
-        }))
+        print(
+            json.dumps(
+                {
+                    "clips": len(clips),
+                    "interesting": [
+                        {"path": str(p), "counts": r.counts, "summary": r.summary()}
+                        for p, r in sorted(interesting.items())
+                    ],
+                    "unreadable": [str(p) for p in unreadable],
+                }
+            )
+        )
         return 0
 
     print(f"{len(interesting)} of {len(clips)} clips look interesting:")
@@ -77,8 +96,10 @@ def _track(args: argparse.Namespace) -> int:
         result = track_video(args.video, detector=det, max_frames=args.max_frames)
     else:
         result = track_video(
-            args.video, targets=tuple(args.targets),
-            device=args.device, max_frames=args.max_frames,
+            args.video,
+            targets=tuple(args.targets),
+            device=args.device,
+            max_frames=args.max_frames,
         )
     rendered = None
     if args.render is not None:
@@ -86,19 +107,27 @@ def _track(args: argparse.Namespace) -> int:
         rendered = str(result.render(out))
 
     if args.json:
-        print(json.dumps({
-            "video": str(args.video),
-            "n_frames": len(result.frames),
-            "n_tracks": len(result.track_ids),
-            "tracks": result.metrics().to_dicts(),
-            "rendered": rendered,
-        }))
+        print(
+            json.dumps(
+                {
+                    "video": str(args.video),
+                    "n_frames": len(result.frames),
+                    "n_tracks": len(result.track_ids),
+                    "tracks": result.metrics().to_dicts(),
+                    "rendered": rendered,
+                }
+            )
+        )
         return 0
 
-    print(f"{args.video.name}: {len(result.frames)} frames · {len(result.track_ids)} distinct tracks")
-    print(result.metrics().select(
-        "id", "category", "type", "first_s", "last_s", "duration_s", "n_frames", "avg_conf"
-    ))
+    print(
+        f"{args.video.name}: {len(result.frames)} frames · {len(result.track_ids)} distinct tracks"
+    )
+    print(
+        result.metrics().select(
+            "id", "category", "type", "first_s", "last_s", "duration_s", "n_frames", "avg_conf"
+        )
+    )
     if rendered is not None:
         print(f"rendered -> {rendered}")
     return 0
@@ -106,9 +135,13 @@ def _track(args: argparse.Namespace) -> int:
 
 def _audio(args: argparse.Namespace) -> int:
     result = analyze_audio(
-        args.clip, model=args.model, overlap_seconds=args.overlap,
-        segment_seconds=args.segment, top_k=args.top_k,
-        candidate_labels=args.labels, device=args.device,
+        args.clip,
+        model=args.model,
+        overlap_seconds=args.overlap,
+        segment_seconds=args.segment,
+        top_k=args.top_k,
+        candidate_labels=args.labels,
+        device=args.device,
     )
     if args.json:
         print(json.dumps(result.to_dict()))
@@ -133,21 +166,38 @@ def main(argv: list[str] | None = None) -> int:
     p_track = sub.add_parser("track", help="detect + track one clip")
     p_track.add_argument("video", type=Path, help="path to a video clip")
     p_track.add_argument("--max-frames", type=int, default=None, help="cap frames processed")
-    p_track.add_argument("--render", nargs="?", const="", default=None,
-                         help="also write an annotated H.264 clip; PATH optional "
-                              "(default: out/<name>_tracked.mp4)")
+    p_track.add_argument(
+        "--render",
+        nargs="?",
+        const="",
+        default=None,
+        help="also write an annotated H.264 clip; PATH optional (default: out/<name>_tracked.mp4)",
+    )
     _add_common(p_track)
     p_track.set_defaults(func=_track)
 
     p_audio = sub.add_parser("audio", help="classify the audio track of one clip")
     p_audio.add_argument("clip", type=Path, help="path to an audio or video file")
-    p_audio.add_argument("--model", default="bioamla/ast-esc50", help="HuggingFace audio model")
-    p_audio.add_argument("--overlap", type=float, default=1.0,
-                         help="seconds of overlap between adjacent 5s segments")
+    p_audio.add_argument(
+        "--model",
+        default=DEFAULT_AUDIO_MODEL,
+        help="HuggingFace audio model (default: zero-shot CLAP)",
+    )
+    p_audio.add_argument(
+        "--overlap",
+        type=float,
+        default=1.0,
+        help="seconds of overlap between adjacent 5s segments",
+    )
     p_audio.add_argument("--segment", type=float, default=5.0, help="segment length in seconds")
     p_audio.add_argument("--top-k", type=int, default=2, help="predictions kept per segment")
-    p_audio.add_argument("--labels", nargs="+", default=None,
-                         help="candidate labels for a zero-shot CLAP model")
+    p_audio.add_argument(
+        "--labels",
+        nargs="+",
+        default=None,
+        help="candidate labels for the zero-shot CLAP model "
+        "(default: a surveillance-oriented set)",
+    )
     p_audio.add_argument("--device", default=None, help="'cuda', 'cpu', ... (default: auto)")
     p_audio.add_argument("--json", action="store_true", help="emit one JSON object to stdout")
     p_audio.set_defaults(func=_audio)

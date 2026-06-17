@@ -46,7 +46,9 @@ class HuggingFaceAudioClassifier:
     ``top_k`` with a ``("None", 0.0)`` prediction so every segment has the same shape.
     """
 
-    def __init__(self, model_name: str = "bioamla/ast-esc50", device: str | None = None) -> None:
+    def __init__(
+        self, model_name: str = "laion/clap-htsat-unfused", device: str | None = None
+    ) -> None:
         # lazy: heavy imports only when the backend is actually constructed
         import os
         import warnings
@@ -79,8 +81,9 @@ class HuggingFaceAudioClassifier:
             raw = self._pipe(wav, candidate_labels=candidate_labels or ["sound"])
         else:
             raw = self._pipe(wav, top_k=top_k)
-        preds = [AudioPrediction(label=r["label"], confidence=float(r["score"]))
-                 for r in raw[:top_k]]
+        preds = [
+            AudioPrediction(label=r["label"], confidence=float(r["score"])) for r in raw[:top_k]
+        ]
         while len(preds) < top_k:
             preds.append(AudioPrediction(label="None", confidence=0.0))
         return preds

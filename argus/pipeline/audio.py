@@ -20,6 +20,23 @@ import numpy as np
 from ..audio.extract import extract_audio, is_video
 from ..core import AudioClassifier, AudioSegment
 
+# Default model is zero-shot CLAP: it scores each window against free-text prompts rather than a
+# fixed label set, which suits surveillance audio (you ask for the sounds you care about). Because
+# CLAP is open-vocabulary, these labels ARE its vocabulary — pass ``candidate_labels`` to override.
+DEFAULT_AUDIO_MODEL = "laion/clap-htsat-unfused"
+DEFAULT_CANDIDATE_LABELS = [
+    "speech",
+    "shouting",
+    "scream",
+    "gunshot",
+    "glass breaking",
+    "alarm",
+    "vehicle",
+    "footsteps",
+    "dog barking",
+    "silence",
+]
+
 
 @dataclass
 class AudioAnalysis:
@@ -40,21 +57,35 @@ class AudioAnalysis:
         )
         lead = tops.most_common(1)
         headline = f"{lead[0][0]} (x{lead[0][1]})" if lead else "no predictions"
-        return (f"{Path(self.input_file).name}: {self.input_duration_seconds:.1f}s, "
-                f"{len(self.segments)} segments · top: {headline}")
+        return (
+            f"{Path(self.input_file).name}: {self.input_duration_seconds:.1f}s, "
+            f"{len(self.segments)} segments · top: {headline}"
+        )
 
     def metrics(self):
         """A polars DataFrame, one row per (segment, prediction rank)."""
         import polars as pl
 
         rows = [
-            {"segment_index": s.segment_index, "start_time": s.start_time,
-             "end_time": s.end_time, "rank": rank, "label": p.label, "confidence": p.confidence}
+            {
+                "segment_index": s.segment_index,
+                "start_time": s.start_time,
+                "end_time": s.end_time,
+                "rank": rank,
+                "label": p.label,
+                "confidence": p.confidence,
+            }
             for s in self.segments
             for rank, p in enumerate(s.predictions)
         ]
-        schema = {"segment_index": pl.Int64, "start_time": pl.Float64, "end_time": pl.Float64,
-                  "rank": pl.Int64, "label": pl.Utf8, "confidence": pl.Float64}
+        schema = {
+            "segment_index": pl.Int64,
+            "start_time": pl.Float64,
+            "end_time": pl.Float64,
+            "rank": pl.Int64,
+            "label": pl.Utf8,
+            "confidence": pl.Float64,
+        }
         return pl.DataFrame(rows, schema=schema)
 
     def to_dict(self) -> dict:
@@ -67,10 +98,14 @@ class AudioAnalysis:
             "overlap_seconds": self.overlap_seconds,
             "segment_seconds": self.segment_seconds,
             "segments": [
-                {"segment_index": s.segment_index,
-                 "start_time": round(s.start_time, 2), "end_time": round(s.end_time, 2),
-                 "predictions": [{"class": p.label, "confidence": p.confidence}
-                                 for p in s.predictions]}
+                {
+                    "segment_index": s.segment_index,
+                    "start_time": round(s.start_time, 2),
+                    "end_time": round(s.end_time, 2),
+                    "predictions": [
+                        {"class": p.label, "confidence": p.confidence} for p in s.predictions
+                    ],
+                }
                 for s in self.segments
             ],
         }
@@ -110,7 +145,7 @@ def analyze_audio(
     path,
     *,
     classifier: AudioClassifier | None = None,
-    model: str = "bioamla/ast-esc50",
+    model: str = DEFAULT_AUDIO_MODEL,
     overlap_seconds: float = 1.0,
     segment_seconds: float = 5.0,
     top_k: int = 2,
@@ -125,8 +160,9 @@ def analyze_audio(
     first, cleaned up unless ``keep_audio``). Windows are ``segment_seconds`` long stepping by
     ``segment_seconds - overlap_seconds``. If ``classifier`` is None a
     ``HuggingFaceAudioClassifier(model, device=device)`` is built lazily (so the synthetic test
-    suite never imports transformers). For CLAP models pass ``candidate_labels``. Needs the
-    ``audio`` extra (``transformers`` + ``soundfile``).
+    suite never imports transformers). The default model is zero-shot CLAP; when no
+    ``candidate_labels`` are given for a zero-shot classifier, ``DEFAULT_CANDIDATE_LABELS`` (a
+    surveillance-oriented set) is used. Needs the ``audio`` extra (``transformers`` + ``soundfile``).
 
     ``_samples`` is a test seam: pass ``(samples_ndarray, samplerate)`` to bypass ffmpeg/soundfile
     decode entirely (the dep-free path).
@@ -157,6 +193,10 @@ def analyze_audio(
 
             classifier = HuggingFaceAudioClassifier(model, device=device)
 
+        # Zero-shot models need a vocabulary; fall back to the surveillance default set.
+        if candidate_labels is None and getattr(classifier, "is_zero_shot", False):
+            candidate_labels = list(DEFAULT_CANDIDATE_LABELS)
+
         data = np.asarray(data)
         bounds = _segment_bounds(
             len(data), samplerate, segment_seconds=segment_seconds, overlap_seconds=overlap_seconds
@@ -170,8 +210,9 @@ def analyze_audio(
                 seg, samplerate, top_k=top_k, candidate_labels=candidate_labels
             )
             segments.append(
-                AudioSegment(segment_index=idx, start_time=t0, end_time=t1,
-                             predictions=tuple(preds))
+                AudioSegment(
+                    segment_index=idx, start_time=t0, end_time=t1, predictions=tuple(preds)
+                )
             )
 
         return AudioAnalysis(

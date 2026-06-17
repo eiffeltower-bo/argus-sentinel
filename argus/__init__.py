@@ -61,6 +61,8 @@ from .identity import (
     search_by_sighting,
 )
 from .pipeline import (
+    DEFAULT_AUDIO_MODEL,
+    DEFAULT_CANDIDATE_LABELS,
     AudioAnalysis,
     IngestResult,
     PeekResult,
@@ -135,4 +137,6 @@ __all__ = [
     "AudioAnalysis",
     "analyze_audio",
     "extract_audio",
+    "DEFAULT_AUDIO_MODEL",
+    "DEFAULT_CANDIDATE_LABELS",
 ]
