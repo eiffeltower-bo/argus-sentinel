@@ -64,18 +64,24 @@ uv run argus-mcp --port 8000          # or: uv run argus <subcommand> …
 
 ### MCP tools
 
-13 tools over `POST /mcp`. All inputs are **server-side paths** (e.g. under `/data`):
+14 tools over `POST /mcp` (file/folder inputs are **server-side paths**, e.g. under `/data`):
 
 | Group | Tools |
 |-------|-------|
 | **Triage / track** | `list_clips`, `peek_folder`, `peek_clip`, `track_clip` |
-| **Face-ID** | `ingest_clip`, `list_sightings`, `list_identities`, `search_face` (probe image), `search_similar` (by sighting), `enroll_identity`, `cluster_sightings`, `audit_log` |
+| **Face-ID** | `ingest_clip`, `list_sightings`, `list_identities`, `search_face` (probe image), `search_similar` (by sighting), `get_face_chip` (view a face), `enroll_identity`, `cluster_sightings`, `audit_log` |
 | **Audio** | `classify_audio` |
 
 Typical agent flow: `peek_folder` → `ingest_clip` the interesting clips → `list_sightings` →
-`search_face` / `search_similar` to re-identify a person → `enroll_identity` / `cluster_sightings`
-to curate identities. Every search/enroll/cluster is recorded in `audit_log`. Full inputs,
-outputs, and per-tool scopes: [context/mcp-server.md](context/mcp-server.md).
+`search_face` / `search_similar` to re-identify a person → `get_face_chip` to view a hit →
+`enroll_identity` / `cluster_sightings` to curate. Every search/enroll/cluster is in `audit_log`.
+Full inputs, outputs, and per-tool scopes: [context/mcp-server.md](context/mcp-server.md).
+
+**Probe images from a remote client:** tool args are JSON (no binary), so a probe face is sent
+either as `image_base64` (if the client has the bytes) or via the out-of-band **`POST /upload`**
+endpoint, which returns an `upload_id` to pass to `search_face`/`enroll_identity`. A browser
+uploader lives at **`http://<host>:8000/upload`**. `get_face_chip` returns faces back as inline
+images. Details: [context/mcp-server.md](context/mcp-server.md).
 
 Smoke-test with the bundled client, or drive it from any MCP client:
 
@@ -92,10 +98,11 @@ async with streamablehttp_client("http://127.0.0.1:8000/mcp") as (read, write, _
     async with ClientSession(read, write) as s:
         await s.initialize()
         await s.call_tool("ingest_clip", {"path": "/data/clip.mp4", "camera_id": "cam-1"})
-        # Remote clients upload the probe image bytes (server-side paths only work on the host):
+        # Probe a face by uploading the bytes (or POST /upload first and pass upload_id):
         probe = base64.b64encode(open("probe.jpg", "rb").read()).decode()
         hits = await s.call_tool("search_face", {"image_base64": probe, "top_k": 10})
-        print(hits.structuredContent["hits"])
+        top = hits.structuredContent["hits"][0]
+        await s.call_tool("get_face_chip", {"sighting_id": top["sighting_id"]})  # -> inline image
 ```
 
 ### CLI

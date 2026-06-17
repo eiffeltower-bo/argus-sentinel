@@ -41,6 +41,7 @@ TOOL_SCOPES: dict[str, str] = {
     "ingest_clip": "argus:ingest",
     "list_sightings": "argus:read",
     "list_identities": "argus:read",
+    "get_face_chip": "argus:read",
     "search_similar": "argus:search",
     "enroll_identity": "argus:enroll",
     "cluster_sightings": "argus:cluster",

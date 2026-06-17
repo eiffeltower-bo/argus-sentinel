@@ -12,12 +12,13 @@ changes. Transport is **streamable HTTP**; the endpoint is `/mcp`.
 | `peek_folder(directory, glob, targets, n_samples, min_hits, device)` | Fast-triage a whole folder: which clips contain people/vehicles worth tracking. | cheap |
 | `peek_clip(path, targets, n_samples, min_hits, device)` | Fast-triage one clip → verdict + per-category counts + `interesting` bool. | cheap |
 | `track_clip(path, targets, max_frames, stride, render, device)` | Detect + track through a clip → per-track metrics; `render=true` also writes an annotated H.264 clip. | heavy |
-| `search_face(image \| image_base64, top_k, cameras, since, min_quality, device, actor)` | Re-identify a probe face across **already-ingested** footage → ranked hits (cosine `score` + evidence `chip_path`). Remote clients pass `image_base64` (image bytes); `image` is a server-side path. Candidates for human review, never an automated match. | medium |
+| `search_face(image \| image_base64 \| upload_id, top_k, cameras, since, min_quality, device, actor)` | Re-identify a probe face across **already-ingested** footage → ranked hits (cosine `score` + evidence `chip_path`; pass a hit's `sighting_id` to `get_face_chip` to view it). Remote clients pass `upload_id` (from `POST /upload`) or `image_base64`; `image` is a server-side path. Candidates for human review, never an automated match. | medium |
 | `ingest_clip(path, camera_id, device, conf, stride, face_stride, max_frames, min_face_px, min_blur_var, max_yaw_ratio, min_det_score)` | Populate the sighting store: detect→track→embed the best face per track → persist. The footage `search_face`/`search_similar` query. Heavy; bound with `max_frames`/`stride`. Needs `face`+`store`. | heavy |
 | `search_similar(sighting_id, top_k, cameras, since, min_quality, actor)` | "More like this": find more sightings of the person in an existing sighting (uses its stored embedding — no probe image). | medium |
 | `list_sightings(cameras, min_quality, limit)` | List stored sightings (metadata + evidence `chip_path`, no vectors). Discover sighting ids for `search_similar`. | cheap |
 | `list_identities(type)` | List identities — `known` (enrolled) + `provisional` (clusters); filter by `type`. | cheap |
-| `enroll_identity(label, images \| images_base64, source, device, actor)` | Enroll a known person from face photos into the watchlist gallery → new identity id. Remote clients pass `images_base64` (list of image bytes); `images` are server-side paths. Needs `face`+`store`. | medium |
+| `get_face_chip(sighting_id)` | Return a sighting's aligned face **as an inline image** (not a path) so the operator can see the face. Pair with `search_face`/`search_similar`/`list_sightings`. | trivial |
+| `enroll_identity(label, images \| images_base64 \| upload_ids, source, device, actor)` | Enroll a known person from face photos into the watchlist gallery → new identity id. Remote clients pass `upload_ids` (from `POST /upload`) or `images_base64`; `images` are server-side paths. Needs `face`+`store`. | medium |
 | `cluster_sightings(space_id, min_cluster_size, min_samples, include_assigned, actor)` | Group unlabeled sightings into provisional identities (HDBSCAN). Needs the `cluster` extra. | medium |
 | `audit_log(actor, since)` | Read the compliance audit trail (every search/enroll/cluster/assignment is logged). | trivial |
 | `classify_audio(path, model, overlap_seconds, segment_seconds, top_k, candidate_labels, device)` | Classify a clip's **audio** track into per-segment sound labels (AST/ESC-50, or zero-shot CLAP via `candidate_labels`). Needs the `audio` extra. | medium |
@@ -104,6 +105,29 @@ connect to `http://<host>:8000/mcp`.
 
 ---
 
+## Sending a probe image from a remote client (upload)
+
+MCP tool **arguments are JSON** — there is no binary channel — and a remote client can't reference
+the server's filesystem. So a probe face reaches the tools one of three ways: `image` (a
+server-side path; local callers only), `image_base64` (inline bytes; only if the client *has* the
+bytes — e.g. Claude Code or a script, **not** a vision-only chat attachment), or the **out-of-band
+upload endpoint** below (best for a chat).
+
+`POST /upload` is a plain HTTP route on the same server/port (outside MCP). It takes the **raw
+image bytes**, validates + stores them, and returns a short `upload_id` to pass to
+`search_face(upload_id=…)` / `enroll_identity(upload_ids=[…])`. Two ways to upload:
+
+- **Browser page:** open `http://<host>:8000/upload`, pick the image → it shows an `upload_id`.
+- **curl / API:** `curl --data-binary @suspect.jpg http://<host>:8000/upload` → `{"upload_id": "…"}`.
+
+Operator flow from a chat: upload via the page → copy the `upload_id` → tell the chat *"search the
+uploaded face `<id>`"* → it calls `search_face(upload_id="<id>")`. To view results, pass a hit's
+`sighting_id` to `get_face_chip`, which returns the face **as an inline image**. Uploads land under
+`<ARGUS_DB dir>/uploads`; the endpoint caps size at 10 MB and **bypasses MCP auth** (custom route)
+— gate it at a proxy if exposed untrusted.
+
+---
+
 ## Authentication (OAuth 2.1)
 
 Auth is **off by default**. When enabled, the server acts as an OAuth 2.1 **Resource Server (RS)**:
@@ -126,12 +150,13 @@ RFC 9728 Protected Resource Metadata document and the `401 WWW-Authenticate` cha
 **Scopes are per-tool.** Beyond a valid token, each tool needs its own scope:
 `argus:peek` (`list_clips`/`peek_folder`/`peek_clip`), `argus:track` (`track_clip`),
 `argus:search` (`search_face`/`search_similar`), `argus:audio` (`classify_audio`),
-`argus:read` (`list_sightings`/`list_identities`), `argus:audit` (`audit_log` — note: distinct
-from `argus:audio`), and the write scopes `argus:ingest` (`ingest_clip`), `argus:enroll`
-(`enroll_identity`), `argus:cluster` (`cluster_sightings`). A valid token missing a tool's
-scope yields an **MCP tool error** ("insufficient scope") — not an HTTP `403` (all tools share the
-one `POST /mcp` route). HTTP `403 insufficient_scope` is reserved for the SDK's blanket
-`ARGUS_OAUTH_SCOPES`.
+`argus:read` (`list_sightings`/`list_identities`/`get_face_chip`), `argus:audit` (`audit_log` —
+note: distinct from `argus:audio`), and the write scopes `argus:ingest` (`ingest_clip`),
+`argus:enroll` (`enroll_identity`), `argus:cluster` (`cluster_sightings`). A valid token missing a
+tool's scope yields an **MCP tool error** ("insufficient scope") — not an HTTP `403` (all tools
+share the one `POST /mcp` route). HTTP `403 insufficient_scope` is reserved for the SDK's blanket
+`ARGUS_OAUTH_SCOPES`. **Note:** the `POST /upload` endpoint (below) is a custom route and bypasses
+MCP auth — gate it at a proxy if the server is exposed untrusted.
 
 **Test loop (Keycloak + MCPJam).** Bring up the IdP, run the RS, then drive the flow:
 ```bash
@@ -218,11 +243,13 @@ Tool results arrive both as `structuredContent` (a dict) and as text in `content
   annotated clip when `render=true`, else `null`.
 - **`search_face`** / **`search_similar`** → `{query, n_hits, hits:[…]}`. Each hit: `sighting_id,
   score` (cosine, 0–1), `distance, camera_id, ts, video_id, track_id, frame_idx, bbox, quality,
-  chip_path, identity_id, cluster_id`. `chip_path` is the server-side aligned-face image for operator
-  review. (`search_similar`'s `query` is `"sighting:<id>"`; `search_face`'s is the path, or
-  `"<uploaded image>"` when called with `image_base64`.) **Remote clients send the probe as
-  `image_base64`** (base64 image bytes or a `data:` URI) since the server can't read the client's
-  filesystem; `image` (a server-side path) is for server-local callers — give exactly one.
+  chip_path, identity_id, cluster_id`. `chip_path` is the server-side aligned-face image; pass the
+  hit's `sighting_id` to `get_face_chip` to view it inline. (`search_similar`'s `query` is
+  `"sighting:<id>"`; `search_face`'s is the path / `upload_id` / `"<uploaded image>"`.) Probe input:
+  exactly one of `upload_id` (from `POST /upload`), `image_base64`, or `image` (server path) — see
+  the upload section above.
+- **`get_face_chip`** (`sighting_id`) → an **image** content block (the aligned face chip), not
+  JSON — renders directly in the client.
 - **`ingest_clip`** → `{video_id, video_path, n_frames, n_tracks, n_faces_detected, n_gated_out,
   n_sightings, avg_quality, summary}`.
 - **`list_sightings`** → `{n, sightings:[{id, video_id, camera_id, track_id, frame_idx, ts, x1, y1,

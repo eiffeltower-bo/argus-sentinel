@@ -24,8 +24,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Image
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.requests import Request
+from starlette.responses import HTMLResponse, JSONResponse, Response
 
 from argus import (
     DEFAULT_AUDIO_MODEL,
@@ -127,15 +129,97 @@ def _decode_b64_image(data: str):
     return img
 
 
-def _resolve_probe(image: str | None, image_base64: str | None):
+def _uploads_dir() -> Path:
+    """Where the ``POST /upload`` endpoint stashes uploaded probe images (beside the store)."""
+    d = Path(os.environ.get("ARGUS_DB", "argus.db")).parent / "uploads"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _path_for_upload(upload_id: str) -> str:
+    """Resolve an ``upload_id`` (from ``POST /upload``) to its stored server-side path."""
+    if not upload_id or not upload_id.isalnum():  # ids are uuid hex — guards path traversal
+        raise ValueError(f"invalid upload_id: {upload_id!r}")
+    p = _uploads_dir() / f"{upload_id}.png"
+    if not p.exists():
+        raise ValueError(f"no upload {upload_id!r} (expired or never uploaded)")
+    return str(p)
+
+
+def _resolve_probe(image: str | None, image_base64: str | None, upload_id: str | None = None):
     """Return what ``search_by_image``/``enroll`` accept: a server-side path or a BGR ndarray.
 
-    Exactly one of ``image`` (a path the *server* can read) or ``image_base64`` (image bytes the
-    *client* uploads) must be given — the latter is what remote MCP clients use.
+    Exactly one probe source must be given: ``image`` (a path the *server* can read),
+    ``image_base64`` (image bytes inline), or ``upload_id`` (an id from ``POST /upload``). Remote
+    clients that can't reach the server's filesystem use ``image_base64`` or the upload endpoint.
     """
-    if (image is None) == (image_base64 is None):
-        raise ValueError("provide exactly one of `image` (server path) or `image_base64`")
-    return image if image is not None else _decode_b64_image(image_base64)
+    n = sum(x is not None for x in (image, image_base64, upload_id))
+    if n != 1:
+        raise ValueError("provide exactly one of `image`, `image_base64`, or `upload_id`")
+    if image is not None:
+        return image
+    if upload_id is not None:
+        return _path_for_upload(upload_id)
+    return _decode_b64_image(image_base64)
+
+
+# Minimal browser uploader: posts the raw file bytes to POST /upload and shows the upload_id to
+# paste into a chat. Kept dependency-free (no multipart) — fetch sends the File as the request body.
+_UPLOAD_PAGE = """<!doctype html><meta charset=utf-8><title>argus · upload a probe face</title>
+<style>body{font:15px system-ui;margin:3rem auto;max-width:34rem}pre{background:#f4f4f5;padding:1rem;border-radius:8px;white-space:pre-wrap}</style>
+<h2>argus — upload a probe face</h2>
+<p>Pick a face image; you'll get an <code>upload_id</code> to paste into your chat
+(e.g. <em>"search the uploaded face &lt;id&gt;"</em>).</p>
+<input type=file id=f accept="image/*"> <button onclick=up()>Upload</button>
+<pre id=out>no file uploaded yet</pre>
+<script>
+async function up(){
+  const f=document.getElementById('f').files[0];
+  const out=document.getElementById('out');
+  if(!f){out.textContent='pick a file first';return;}
+  out.textContent='uploading…';
+  try{
+    const r=await fetch('/upload',{method:'POST',body:f});
+    const j=await r.json();
+    out.textContent = r.ok
+      ? 'upload_id: '+j.upload_id+'\\n\\nPaste into your chat:\\n  search the uploaded face '+j.upload_id
+      : 'error: '+(j.error||r.status);
+  }catch(e){out.textContent='error: '+e}
+}
+</script>"""
+
+
+@mcp.custom_route("/upload", methods=["GET", "POST"])
+async def upload(request: Request) -> Response:
+    """Out-of-band image upload (NOT an MCP tool, so remote clients can send actual bytes).
+
+    ``GET`` serves a tiny uploader page; ``POST`` takes the raw image bytes (the page's ``fetch``
+    body, or ``curl --data-binary @face.jpg``), validates + stores them, and returns
+    ``{"upload_id": ...}`` to pass to ``search_face`` / ``enroll_identity``. NOTE: custom routes
+    bypass MCP auth — gate this at the proxy if the server is exposed untrusted.
+    """
+    if request.method == "GET":
+        return HTMLResponse(_UPLOAD_PAGE)
+
+    import uuid
+
+    import cv2
+    import numpy as np
+
+    data = await request.body()
+    if not data:
+        return JSONResponse({"error": "empty body; POST the raw image bytes"}, status_code=400)
+    if len(data) > 10 * 1024 * 1024:
+        return JSONResponse({"error": "image too large (max 10 MB)"}, status_code=413)
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        return JSONResponse(
+            {"error": "could not decode an image (send raw bytes, e.g. curl --data-binary)"},
+            status_code=400,
+        )
+    upload_id = uuid.uuid4().hex[:12]
+    cv2.imwrite(str(_uploads_dir() / f"{upload_id}.png"), img)
+    return JSONResponse({"upload_id": upload_id})
 
 
 @mcp.tool()
@@ -272,6 +356,7 @@ def track_clip(
 def search_face(
     image: str | None = None,
     image_base64: str | None = None,
+    upload_id: str | None = None,
     top_k: int = 20,
     cameras: list[str] | None = None,
     since: float | None = None,
@@ -281,18 +366,18 @@ def search_face(
 ) -> dict[str, Any]:
     """Find where a face appears across already-ingested footage (face-ID re-identification).
 
-    Pass the probe photo as ``image_base64`` (base64-encoded image bytes, or a ``data:`` URI) when
-    calling **remotely** — the server can't see the client's filesystem. ``image`` (a server-side
-    path) is for server-local callers only; give exactly one. The strongest face in the probe is
-    embedded and matched against the sighting store (footage must have been ingested first).
-    Optionally filter by ``cameras``, ``since`` (video timestamp seconds), and ``min_quality``.
-    Returns up to ``top_k`` ranked hits, each with a cosine ``score`` in [0,1] and a ``chip_path``
-    to the matched face for review. These are CANDIDATES for human adjudication, never an automated
-    identity decision. Needs the ``face`` + ``store`` extras and a populated DB (``ARGUS_DB``); the
-    search is audited.
+    Supply the probe photo one of three ways (exactly one): ``upload_id`` from ``POST /upload``
+    (best for remote clients — upload the bytes out-of-band, pass the id here), ``image_base64``
+    (inline base64 bytes / ``data:`` URI), or ``image`` (a server-side path, server-local callers
+    only). The strongest face in the probe is embedded and matched against the sighting store
+    (footage must have been ingested first). Optionally filter by ``cameras``, ``since`` (video
+    timestamp seconds), and ``min_quality``. Returns up to ``top_k`` ranked hits, each with a cosine
+    ``score`` in [0,1] and a ``chip_path`` (pass the hit's ``sighting_id`` to ``get_face_chip`` to
+    view the face). CANDIDATES for human adjudication, never an automated decision. Needs the
+    ``face`` + ``store`` extras and a populated DB (``ARGUS_DB``); the search is audited.
     """
     require_scope(TOOL_SCOPES["search_face"])
-    probe = _resolve_probe(image, image_base64)
+    probe = _resolve_probe(image, image_base64, upload_id)
     store = _open_store()
     try:
         hits = search_by_image(
@@ -305,7 +390,7 @@ def search_face(
             device=device,
             actor=actor,
         )
-        return search_to_dict(image or "<uploaded image>", hits)
+        return search_to_dict(image or upload_id or "<uploaded image>", hits)
     finally:
         store.close()
 
@@ -439,31 +524,64 @@ def enroll_identity(
     label: str,
     images: list[str] | None = None,
     images_base64: list[str] | None = None,
+    upload_ids: list[str] | None = None,
     source: str = "id_photo",
     device: str | None = None,
     actor: str = "mcp",
 ) -> dict[str, Any]:
     """Enroll a known person into the watchlist gallery from one or more face photos.
 
-    Pass the photos as ``images_base64`` (a list of base64-encoded image bytes / ``data:`` URIs)
-    when calling **remotely**; ``images`` (server-side paths) is for server-local callers. Give
-    exactly one. Creates a ``known`` identity, embeds each image's strongest face, and stores an
-    enrollment (with its aligned chip). Returns the new identity id. Audited; needs the ``face`` +
-    ``store`` extras.
+    Supply the photos one of three ways (exactly one): ``upload_ids`` (ids from ``POST /upload`` —
+    best for remote clients), ``images_base64`` (inline base64 bytes / ``data:`` URIs), or
+    ``images`` (server-side paths, server-local callers). Creates a ``known`` identity, embeds each
+    image's strongest face, and stores an enrollment (with its aligned chip). Returns the new
+    identity id. Audited; needs the ``face`` + ``store`` extras.
     """
     require_scope(TOOL_SCOPES["enroll_identity"])
-    if (images is None) == (images_base64 is None):
-        raise ValueError("provide exactly one of `images` (server paths) or `images_base64`")
-    if images is not None:
-        resolved, n = [Path(i) for i in images], len(images)
+    given = [
+        (k, v)
+        for k, v in (
+            ("images", images),
+            ("images_base64", images_base64),
+            ("upload_ids", upload_ids),
+        )
+        if v is not None
+    ]
+    if len(given) != 1:
+        raise ValueError("provide exactly one of `images`, `images_base64`, or `upload_ids`")
+    key, val = given[0]
+    if key == "images":
+        resolved = [Path(i) for i in val]
+    elif key == "upload_ids":
+        resolved = [_path_for_upload(u) for u in val]
     else:
-        resolved, n = [_decode_b64_image(b) for b in images_base64], len(images_base64)
+        resolved = [_decode_b64_image(b) for b in val]
+    n = len(val)
     store = _open_store()
     try:
         identity_id = enroll(
             label, resolved, store=store, source=source, device=device, actor=actor
         )
         return {"identity_id": identity_id, "label": label, "n_images": n}
+    finally:
+        store.close()
+
+
+@mcp.tool()
+def get_face_chip(sighting_id: int) -> Image:
+    """Return a sighting's aligned face chip as an inline image, for visual review.
+
+    Pairs with ``search_face`` / ``search_similar`` / ``list_sightings``: take a hit's
+    ``sighting_id`` and call this to actually SEE the face in the client (the result is an image,
+    not a path). Returns the stored 112x112 aligned chip.
+    """
+    require_scope(TOOL_SCOPES["get_face_chip"])
+    store = _open_store()
+    try:
+        s = store.get_sighting(sighting_id, with_embedding=False)
+        if s is None or not s.chip_path:
+            raise ValueError(f"no chip for sighting {sighting_id}")
+        return Image(path=s.chip_path)
     finally:
         store.close()
 
@@ -606,6 +724,7 @@ _TOOLS = [
     list_sightings,
     list_identities,
     enroll_identity,
+    get_face_chip,
     cluster_sightings,
     audit_log,
     classify_audio,

@@ -600,6 +600,108 @@ def test_enroll_identity_accepts_base64(monkeypatch):
     assert store.closed is True
 
 
+def test_path_for_upload_validates(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARGUS_DB", str(tmp_path / "argus.db"))
+    with pytest.raises(ValueError):
+        server._path_for_upload("../etc")  # non-alnum → no traversal
+    with pytest.raises(ValueError):
+        server._path_for_upload("deadbeef")  # well-formed but not present
+
+
+def test_search_face_accepts_upload_id(tmp_path, monkeypatch):
+    import cv2
+
+    monkeypatch.setenv("ARGUS_DB", str(tmp_path / "argus.db"))
+    cv2.imwrite(str(server._uploads_dir() / "abc123.png"), np.zeros((10, 10, 3), np.uint8))
+    store = _FakeStore()
+    monkeypatch.setattr(server, "_open_store", lambda: store)
+    captured = {}
+    monkeypatch.setattr(
+        server,
+        "search_by_image",
+        lambda probe, **kw: captured.update(probe=probe) or [_hit(1, 0.9, sighting_id=7)],
+    )
+    out = server.search_face(upload_id="abc123")
+    assert str(captured["probe"]).endswith("abc123.png")  # resolved to the stored upload path
+    assert out["query"] == "abc123" and out["n_hits"] == 1
+    assert store.closed is True
+
+
+def test_enroll_identity_accepts_upload_ids(tmp_path, monkeypatch):
+    import cv2
+
+    monkeypatch.setenv("ARGUS_DB", str(tmp_path / "argus.db"))
+    for uid in ("u1aa", "u2bb"):
+        cv2.imwrite(str(server._uploads_dir() / f"{uid}.png"), np.zeros((10, 10, 3), np.uint8))
+    store = _FakeStore()
+    monkeypatch.setattr(server, "_open_store", lambda: store)
+    captured = {}
+    monkeypatch.setattr(
+        server, "enroll", lambda label, images, **kw: captured.update(images=list(images)) or 3
+    )
+    out = server.enroll_identity("X", upload_ids=["u1aa", "u2bb"])
+    assert out["identity_id"] == 3 and out["n_images"] == 2
+    assert all(str(p).endswith(".png") for p in captured["images"])  # resolved to paths
+
+
+def test_enroll_identity_requires_exactly_one_source(monkeypatch):
+    monkeypatch.setattr(server, "_open_store", lambda: _FakeStore())
+    with pytest.raises(ValueError):
+        server.enroll_identity("X")  # none
+    with pytest.raises(ValueError):
+        server.enroll_identity("X", images=["a"], upload_ids=["b"])  # two
+
+
+def test_get_face_chip_returns_image(tmp_path, monkeypatch):
+    import cv2
+    from mcp.server.fastmcp import Image
+
+    chip = tmp_path / "chip.png"
+    cv2.imwrite(str(chip), np.zeros((112, 112, 3), np.uint8))
+    sighting = Sighting(
+        video_id=1,
+        camera_id="c",
+        track_id=1,
+        frame_idx=1,
+        ts=1.0,
+        bbox=(0, 0, 1, 1),
+        quality=0.9,
+        chip_path=str(chip),
+        embedding_space_id="x",
+        embedding=np.zeros(4, np.float32),
+        id=5,
+    )
+
+    class _S(_FakeStore):
+        def get_sighting(self, sid, *, with_embedding=True):
+            return sighting if sid == 5 else None
+
+    store = _S()
+    monkeypatch.setattr(server, "_open_store", lambda: store)
+    out = server.get_face_chip(5)
+    assert isinstance(out, Image)
+    ic = out.to_image_content()  # encodes to an MCP ImageContent block
+    assert ic.type == "image" and ic.data
+    with pytest.raises(ValueError):
+        server.get_face_chip(999)  # missing sighting
+    assert store.closed is True
+
+
+def test_upload_route_roundtrip(tmp_path, monkeypatch):
+    import cv2
+    from starlette.testclient import TestClient
+
+    monkeypatch.setenv("ARGUS_DB", str(tmp_path / "argus.db"))
+    _, buf = cv2.imencode(".png", np.zeros((10, 10, 3), np.uint8))
+    with TestClient(server.mcp.streamable_http_app(), base_url="http://localhost") as client:
+        assert client.get("/upload").status_code == 200  # uploader page
+        r = client.post("/upload", content=buf.tobytes())
+        assert r.status_code == 200
+        uid = r.json()["upload_id"]
+        assert (server._uploads_dir() / f"{uid}.png").exists()
+        assert client.post("/upload", content=b"not an image").status_code == 400
+
+
 def test_face_id_serializers_are_jsonable():
     json.dumps(_serialize.ingest_to_dict(IngestResult(1, Path("x.mp4"), 10, 2, 5, 1, 2, 0.7)))
     json.dumps(_serialize.cluster_to_dict(ClusterResult(10, 2, 3, 1, [5, 6])))
