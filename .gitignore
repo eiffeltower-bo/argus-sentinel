@@ -15,6 +15,16 @@ __marimo__/
 
 # generated artifacts
 out/
+# downloaded model weights (large; fetched/mounted at runtime)
+weights/
+# local sqlite-vec store
+argus.db
+# extracted face chips
+chips/
+
+# debugging scratch (HAR captures, client log dumps) under context/
+context/*.har
+context/claude_logs.json
 
 # pulled DVR footage + transcodes (large, regenerable)
 dvr_raw/

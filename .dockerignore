@@ -1,7 +1,14 @@
 # Keep the build context small.
 .git
 .gitignore
-*.pt              # model weights auto-download lazily at runtime; not baked into the image
+# runtime data — fetched/mounted at runtime, never baked into the image:
+# model weights auto-download lazily; weights/ is ~338M of them
+*.pt
+weights/
+# local sqlite-vec store
+argus.db
+# extracted face chips
+chips/
 .venv
 __pycache__/
 *.pyc
