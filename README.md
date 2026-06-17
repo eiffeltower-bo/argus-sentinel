@@ -84,6 +84,7 @@ uv run python examples/mcp_client_demo.py --url http://127.0.0.1:8000/mcp --dir 
 ```
 
 ```python
+import base64
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
@@ -91,7 +92,9 @@ async with streamablehttp_client("http://127.0.0.1:8000/mcp") as (read, write, _
     async with ClientSession(read, write) as s:
         await s.initialize()
         await s.call_tool("ingest_clip", {"path": "/data/clip.mp4", "camera_id": "cam-1"})
-        hits = await s.call_tool("search_face", {"image": "/data/probe.jpg", "top_k": 10})
+        # Remote clients upload the probe image bytes (server-side paths only work on the host):
+        probe = base64.b64encode(open("probe.jpg", "rb").read()).decode()
+        hits = await s.call_tool("search_face", {"image_base64": probe, "top_k": 10})
         print(hits.structuredContent["hits"])
 ```
 

@@ -12,12 +12,12 @@ changes. Transport is **streamable HTTP**; the endpoint is `/mcp`.
 | `peek_folder(directory, glob, targets, n_samples, min_hits, device)` | Fast-triage a whole folder: which clips contain people/vehicles worth tracking. | cheap |
 | `peek_clip(path, targets, n_samples, min_hits, device)` | Fast-triage one clip → verdict + per-category counts + `interesting` bool. | cheap |
 | `track_clip(path, targets, max_frames, stride, render, device)` | Detect + track through a clip → per-track metrics; `render=true` also writes an annotated H.264 clip. | heavy |
-| `search_face(image, top_k, cameras, since, min_quality, device, actor)` | Re-identify a probe face across **already-ingested** footage → ranked hits (cosine `score` + evidence `chip_path`). Candidates for human review, never an automated match. | medium |
+| `search_face(image \| image_base64, top_k, cameras, since, min_quality, device, actor)` | Re-identify a probe face across **already-ingested** footage → ranked hits (cosine `score` + evidence `chip_path`). Remote clients pass `image_base64` (image bytes); `image` is a server-side path. Candidates for human review, never an automated match. | medium |
 | `ingest_clip(path, camera_id, device, conf, stride, face_stride, max_frames, min_face_px, min_blur_var, max_yaw_ratio, min_det_score)` | Populate the sighting store: detect→track→embed the best face per track → persist. The footage `search_face`/`search_similar` query. Heavy; bound with `max_frames`/`stride`. Needs `face`+`store`. | heavy |
 | `search_similar(sighting_id, top_k, cameras, since, min_quality, actor)` | "More like this": find more sightings of the person in an existing sighting (uses its stored embedding — no probe image). | medium |
 | `list_sightings(cameras, min_quality, limit)` | List stored sightings (metadata + evidence `chip_path`, no vectors). Discover sighting ids for `search_similar`. | cheap |
 | `list_identities(type)` | List identities — `known` (enrolled) + `provisional` (clusters); filter by `type`. | cheap |
-| `enroll_identity(label, images, source, device, actor)` | Enroll a known person from face photos into the watchlist gallery → new identity id. Needs `face`+`store`. | medium |
+| `enroll_identity(label, images \| images_base64, source, device, actor)` | Enroll a known person from face photos into the watchlist gallery → new identity id. Remote clients pass `images_base64` (list of image bytes); `images` are server-side paths. Needs `face`+`store`. | medium |
 | `cluster_sightings(space_id, min_cluster_size, min_samples, include_assigned, actor)` | Group unlabeled sightings into provisional identities (HDBSCAN). Needs the `cluster` extra. | medium |
 | `audit_log(actor, since)` | Read the compliance audit trail (every search/enroll/cluster/assignment is logged). | trivial |
 | `classify_audio(path, model, overlap_seconds, segment_seconds, top_k, candidate_labels, device)` | Classify a clip's **audio** track into per-segment sound labels (AST/ESC-50, or zero-shot CLAP via `candidate_labels`). Needs the `audio` extra. | medium |
@@ -219,7 +219,10 @@ Tool results arrive both as `structuredContent` (a dict) and as text in `content
 - **`search_face`** / **`search_similar`** → `{query, n_hits, hits:[…]}`. Each hit: `sighting_id,
   score` (cosine, 0–1), `distance, camera_id, ts, video_id, track_id, frame_idx, bbox, quality,
   chip_path, identity_id, cluster_id`. `chip_path` is the server-side aligned-face image for operator
-  review. (`search_similar`'s `query` is `"sighting:<id>"`.)
+  review. (`search_similar`'s `query` is `"sighting:<id>"`; `search_face`'s is the path, or
+  `"<uploaded image>"` when called with `image_base64`.) **Remote clients send the probe as
+  `image_base64`** (base64 image bytes or a `data:` URI) since the server can't read the client's
+  filesystem; `image` (a server-side path) is for server-local callers — give exactly one.
 - **`ingest_clip`** → `{video_id, video_path, n_frames, n_tracks, n_faces_detected, n_gated_out,
   n_sightings, avg_quality, summary}`.
 - **`list_sightings`** → `{n, sightings:[{id, video_id, camera_id, track_id, frame_idx, ts, x1, y1,

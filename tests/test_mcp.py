@@ -547,6 +547,59 @@ def test_audit_log_forwards_and_closes(monkeypatch):
     assert store.closed is True
 
 
+def _b64_png():
+    import base64
+
+    import cv2
+
+    ok, buf = cv2.imencode(".png", np.zeros((12, 12, 3), np.uint8))
+    return base64.b64encode(buf.tobytes()).decode()
+
+
+def test_search_face_accepts_base64(monkeypatch):
+    store = _FakeStore()
+    monkeypatch.setattr(server, "_open_store", lambda: store)
+    captured = {}
+
+    def fake_search(probe, **kw):
+        captured["probe"] = probe
+        return [_hit(1, 0.9, sighting_id=7)]
+
+    monkeypatch.setattr(server, "search_by_image", fake_search)
+    out = server.search_face(image_base64=_b64_png(), top_k=3)
+    json.dumps(out)
+    assert isinstance(captured["probe"], np.ndarray)  # decoded server-side, not a path
+    assert out["n_hits"] == 1 and out["query"] == "<uploaded image>"
+    assert store.closed is True
+
+
+def test_search_face_requires_exactly_one_probe(monkeypatch):
+    monkeypatch.setattr(server, "_open_store", lambda: _FakeStore())
+    with pytest.raises(ValueError):
+        server.search_face()  # neither image nor image_base64
+    with pytest.raises(ValueError):
+        server.search_face(image="/x.jpg", image_base64=_b64_png())  # both
+
+
+def test_search_face_rejects_bad_base64(monkeypatch):
+    monkeypatch.setattr(server, "_open_store", lambda: _FakeStore())
+    with pytest.raises(ValueError):
+        server.search_face(image_base64="not-base64!!")
+
+
+def test_enroll_identity_accepts_base64(monkeypatch):
+    store = _FakeStore()
+    monkeypatch.setattr(server, "_open_store", lambda: store)
+    captured = {}
+    monkeypatch.setattr(
+        server, "enroll", lambda label, images, **kw: captured.update(images=list(images)) or 9
+    )
+    out = server.enroll_identity("X", images_base64=[_b64_png(), _b64_png()])
+    assert out["identity_id"] == 9 and out["n_images"] == 2
+    assert all(isinstance(im, np.ndarray) for im in captured["images"])  # decoded server-side
+    assert store.closed is True
+
+
 def test_face_id_serializers_are_jsonable():
     json.dumps(_serialize.ingest_to_dict(IngestResult(1, Path("x.mp4"), 10, 2, 5, 1, 2, 0.7)))
     json.dumps(_serialize.cluster_to_dict(ClusterResult(10, 2, 3, 1, [5, 6])))

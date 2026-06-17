@@ -105,6 +105,39 @@ def _open_store():
     )
 
 
+def _decode_b64_image(data: str):
+    """Decode a base64 (or ``data:`` URI) image string into a BGR ndarray, or raise ValueError.
+
+    Lets remote clients send the actual probe image over the wire instead of a server-side path.
+    """
+    import base64
+
+    import cv2
+    import numpy as np
+
+    if data.lstrip().startswith("data:") and "," in data:
+        data = data.split(",", 1)[1]  # strip a data:image/...;base64, prefix
+    try:
+        raw = base64.b64decode(data, validate=True)
+    except Exception as e:
+        raise ValueError(f"image_base64 is not valid base64: {e}") from e
+    img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError("image_base64 did not decode to a readable image")
+    return img
+
+
+def _resolve_probe(image: str | None, image_base64: str | None):
+    """Return what ``search_by_image``/``enroll`` accept: a server-side path or a BGR ndarray.
+
+    Exactly one of ``image`` (a path the *server* can read) or ``image_base64`` (image bytes the
+    *client* uploads) must be given — the latter is what remote MCP clients use.
+    """
+    if (image is None) == (image_base64 is None):
+        raise ValueError("provide exactly one of `image` (server path) or `image_base64`")
+    return image if image is not None else _decode_b64_image(image_base64)
+
+
 @mcp.tool()
 def list_clips(directory: str, glob: str = "*.mp4") -> dict[str, Any]:
     """List video clips in a server-side directory without analyzing them.
@@ -237,7 +270,8 @@ def track_clip(
 
 @mcp.tool()
 def search_face(
-    image: str,
+    image: str | None = None,
+    image_base64: str | None = None,
     top_k: int = 20,
     cameras: list[str] | None = None,
     since: float | None = None,
@@ -247,18 +281,22 @@ def search_face(
 ) -> dict[str, Any]:
     """Find where a face appears across already-ingested footage (face-ID re-identification).
 
-    ``image`` is a server-side path to a probe photo; its strongest face is embedded and matched
-    against the sighting store (footage must have been ingested first). Optionally filter by
-    ``cameras``, ``since`` (video timestamp seconds), and ``min_quality``. Returns up to ``top_k``
-    ranked hits, each with a cosine ``score`` in [0,1] and a ``chip_path`` to the matched face for
-    review. These are CANDIDATES for human adjudication, never an automated identity decision.
-    Needs the ``face`` + ``store`` extras and a populated DB (``ARGUS_DB``); the search is audited.
+    Pass the probe photo as ``image_base64`` (base64-encoded image bytes, or a ``data:`` URI) when
+    calling **remotely** — the server can't see the client's filesystem. ``image`` (a server-side
+    path) is for server-local callers only; give exactly one. The strongest face in the probe is
+    embedded and matched against the sighting store (footage must have been ingested first).
+    Optionally filter by ``cameras``, ``since`` (video timestamp seconds), and ``min_quality``.
+    Returns up to ``top_k`` ranked hits, each with a cosine ``score`` in [0,1] and a ``chip_path``
+    to the matched face for review. These are CANDIDATES for human adjudication, never an automated
+    identity decision. Needs the ``face`` + ``store`` extras and a populated DB (``ARGUS_DB``); the
+    search is audited.
     """
     require_scope(TOOL_SCOPES["search_face"])
+    probe = _resolve_probe(image, image_base64)
     store = _open_store()
     try:
         hits = search_by_image(
-            image,
+            probe,
             store=store,
             top_k=top_k,
             cameras=cameras,
@@ -267,7 +305,7 @@ def search_face(
             device=device,
             actor=actor,
         )
-        return search_to_dict(image, hits)
+        return search_to_dict(image or "<uploaded image>", hits)
     finally:
         store.close()
 
@@ -399,29 +437,33 @@ def search_similar(
 @mcp.tool()
 def enroll_identity(
     label: str,
-    images: list[str],
+    images: list[str] | None = None,
+    images_base64: list[str] | None = None,
     source: str = "id_photo",
     device: str | None = None,
     actor: str = "mcp",
 ) -> dict[str, Any]:
     """Enroll a known person into the watchlist gallery from one or more face photos.
 
-    Creates a ``known`` identity, embeds each image's strongest face, and stores an enrollment (with
-    its aligned chip). ``images`` are server-side paths. Returns the new identity id. Audited; needs
-    the ``face`` + ``store`` extras.
+    Pass the photos as ``images_base64`` (a list of base64-encoded image bytes / ``data:`` URIs)
+    when calling **remotely**; ``images`` (server-side paths) is for server-local callers. Give
+    exactly one. Creates a ``known`` identity, embeds each image's strongest face, and stores an
+    enrollment (with its aligned chip). Returns the new identity id. Audited; needs the ``face`` +
+    ``store`` extras.
     """
     require_scope(TOOL_SCOPES["enroll_identity"])
+    if (images is None) == (images_base64 is None):
+        raise ValueError("provide exactly one of `images` (server paths) or `images_base64`")
+    if images is not None:
+        resolved, n = [Path(i) for i in images], len(images)
+    else:
+        resolved, n = [_decode_b64_image(b) for b in images_base64], len(images_base64)
     store = _open_store()
     try:
         identity_id = enroll(
-            label,
-            [Path(i) for i in images],
-            store=store,
-            source=source,
-            device=device,
-            actor=actor,
+            label, resolved, store=store, source=source, device=device, actor=actor
         )
-        return {"identity_id": identity_id, "label": label, "n_images": len(images)}
+        return {"identity_id": identity_id, "label": label, "n_images": n}
     finally:
         store.close()
 
