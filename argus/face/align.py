@@ -18,11 +18,11 @@ import numpy as np
 # Canonical 5-point landmark positions for a 112x112 aligned chip (x, y), in pixels.
 _REFERENCE_112 = np.array(
     [
-        [38.2946, 51.6963],   # left eye
-        [73.5318, 51.5014],   # right eye
-        [56.0252, 71.7366],   # nose tip
-        [41.5493, 92.3655],   # left mouth corner
-        [70.7299, 92.2041],   # right mouth corner
+        [38.2946, 51.6963],  # left eye
+        [73.5318, 51.5014],  # right eye
+        [56.0252, 71.7366],  # nose tip
+        [41.5493, 92.3655],  # left mouth corner
+        [70.7299, 92.2041],  # right mouth corner
     ],
     dtype=np.float32,
 )

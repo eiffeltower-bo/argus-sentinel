@@ -60,7 +60,9 @@ class QualityGate:
     size_ref_px: float = 112.0
     blur_ref_var: float = 200.0
 
-    def evaluate(self, chip: np.ndarray, *, det_score: float, face_px: float, landmarks) -> GateResult:
+    def evaluate(
+        self, chip: np.ndarray, *, det_score: float, face_px: float, landmarks
+    ) -> GateResult:
         """Score one aligned ``chip`` and decide whether it passes the hard rejects."""
         gray = cv2.cvtColor(chip, cv2.COLOR_BGR2GRAY) if chip.ndim == 3 else chip
         blur_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
@@ -80,12 +82,18 @@ class QualityGate:
         score = float(np.mean([size_s, blur_s, pose_s, det_s]))
 
         return GateResult(
-            passed=passed, score=score, face_px=face_px,
-            blur_var=blur_var, yaw_ratio=yaw, det_score=det_score,
+            passed=passed,
+            score=score,
+            face_px=face_px,
+            blur_var=blur_var,
+            yaw_ratio=yaw,
+            det_score=det_score,
         )
 
     def score(self, chip: np.ndarray, *, det_score: float, face_px: float, landmarks) -> float:
         return self.evaluate(chip, det_score=det_score, face_px=face_px, landmarks=landmarks).score
 
     def passes(self, chip: np.ndarray, *, det_score: float, face_px: float, landmarks) -> bool:
-        return self.evaluate(chip, det_score=det_score, face_px=face_px, landmarks=landmarks).passed
+        return self.evaluate(
+            chip, det_score=det_score, face_px=face_px, landmarks=landmarks
+        ).passed

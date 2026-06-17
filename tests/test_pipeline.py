@@ -37,8 +37,24 @@ def _result_with_one_track(n=5):
     for fi in range(n):
         # box touches the left edge on the first frame, drifts inward after
         x1 = 2 + fi * 5
-        frames.append((fi, [Track(x1, 20, x1 + 60, 180, 0.8,
-                                   track_id=1, class_id=0, label="person", category="person")]))
+        frames.append(
+            (
+                fi,
+                [
+                    Track(
+                        x1,
+                        20,
+                        x1 + 60,
+                        180,
+                        0.8,
+                        track_id=1,
+                        class_id=0,
+                        label="person",
+                        category="person",
+                    )
+                ],
+            )
+        )
     return TrackingResult(video_path=Path("x.mp4"), fps=10.0, width=200, height=200, frames=frames)
 
 
@@ -100,8 +116,8 @@ def test_video_tracker_no_detections(make_video, scripted_detector):
     n = 5
     video = make_video(n_frames=n)
     result = VideoTracker(scripted_detector([[] for _ in range(n)]), ByteTrackTracker()).run(video)
-    assert len(result.frames) == n          # every frame still recorded
-    assert result.metrics().height == 0     # but no tracks
+    assert len(result.frames) == n  # every frame still recorded
+    assert result.metrics().height == 0  # but no tracks
 
 
 def test_track_video_bad_target(make_video):

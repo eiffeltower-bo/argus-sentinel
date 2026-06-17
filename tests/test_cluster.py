@@ -27,17 +27,27 @@ def _populate(store):
 
     def add(vec):
         nonlocal tid
-        rows.append(Sighting(video_id=vid, camera_id="cam-1", track_id=tid, frame_idx=tid,
-                             ts=float(tid), bbox=(0.0, 0.0, 1.0, 1.0), quality=0.9,
-                             chip_path=f"/c{tid}.png", embedding_space_id="fake_v1",
-                             embedding=_norm(vec)))
+        rows.append(
+            Sighting(
+                video_id=vid,
+                camera_id="cam-1",
+                track_id=tid,
+                frame_idx=tid,
+                ts=float(tid),
+                bbox=(0.0, 0.0, 1.0, 1.0),
+                quality=0.9,
+                chip_path=f"/c{tid}.png",
+                embedding_space_id="fake_v1",
+                embedding=_norm(vec),
+            )
+        )
         tid += 1
 
     for _ in range(8):
         add(a + rng.normal(0, 0.02, DIM))
     for _ in range(8):
         add(b + rng.normal(0, 0.02, DIM))
-    add(_norm([0, 0, 1, 0, 0, 0, 0, 0]))   # outliers (lone points -> noise)
+    add(_norm([0, 0, 1, 0, 0, 0, 0, 0]))  # outliers (lone points -> noise)
     add(_norm([0, 0, 0, 0, 0, 0, 1, 0]))
     store.add_sightings(rows)
 
@@ -68,7 +78,7 @@ def test_label_cluster_merge_reassign(tmp_path):
     store = FakeStore(tmp_path)
     _populate(store)
     run_clustering(store=store, space_id="fake_v1", min_cluster_size=3, actor="op")
-    a_cid, b_cid = _cid(store, 1), _cid(store, 9)   # each blob's provisional identity id
+    a_cid, b_cid = _cid(store, 1), _cid(store, 9)  # each blob's provisional identity id
 
     # label_cluster: promote the A blob into a named known identity
     known = label_cluster(a_cid, "Suspect A", store=store, actor="op")

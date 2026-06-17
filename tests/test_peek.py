@@ -65,8 +65,9 @@ def test_peek_interesting_counts_per_category(make_video, scripted_detector):
     video = make_video(n_frames=10)
     # 10 frames, n_samples=5 -> 5 detect calls; put a person on 3 of them.
     script = [[_person()], [], [_person()], [], [_person()]]
-    res = peek_video(video, targets=("person",), n_samples=5, min_hits=2,
-                     detector=scripted_detector(script))
+    res = peek_video(
+        video, targets=("person",), n_samples=5, min_hits=2, detector=scripted_detector(script)
+    )
     assert isinstance(res, PeekResult)
     assert res.n_sampled == 5
     assert res.frames_with_hits == 3
@@ -76,8 +77,13 @@ def test_peek_interesting_counts_per_category(make_video, scripted_detector):
 
 def test_peek_not_interesting_when_empty(make_video, scripted_detector):
     video = make_video(n_frames=10)
-    res = peek_video(video, targets=("person",), n_samples=5, min_hits=2,
-                     detector=scripted_detector([[] for _ in range(5)]))
+    res = peek_video(
+        video,
+        targets=("person",),
+        n_samples=5,
+        min_hits=2,
+        detector=scripted_detector([[] for _ in range(5)]),
+    )
     assert res.frames_with_hits == 0
     assert res.counts == {"person": 0}
     assert res.interesting is False
@@ -86,20 +92,26 @@ def test_peek_not_interesting_when_empty(make_video, scripted_detector):
 def test_peek_threshold_boundary(make_video, scripted_detector):
     video = make_video(n_frames=10)
     script = [[_person()], [_person()], [], [], []]  # exactly 2 hits
-    at = peek_video(video, targets=("person",), n_samples=5, min_hits=2,
-                    detector=scripted_detector(script))
+    at = peek_video(
+        video, targets=("person",), n_samples=5, min_hits=2, detector=scripted_detector(script)
+    )
     assert at.frames_with_hits == 2 and at.interesting is True
 
-    below = peek_video(video, targets=("person",), n_samples=5, min_hits=3,
-                       detector=scripted_detector(script))
+    below = peek_video(
+        video, targets=("person",), n_samples=5, min_hits=3, detector=scripted_detector(script)
+    )
     assert below.frames_with_hits == 2 and below.interesting is False
 
 
 def test_peek_samples_capped_at_video_length(make_video, scripted_detector):
     video = make_video(n_frames=4)
     # n_samples larger than the clip -> sample every frame, no more.
-    res = peek_video(video, targets=("person",), n_samples=24,
-                     detector=scripted_detector([[] for _ in range(4)]))
+    res = peek_video(
+        video,
+        targets=("person",),
+        n_samples=24,
+        detector=scripted_detector([[] for _ in range(4)]),
+    )
     assert res.total_frames == 4
     assert res.n_sampled == 4
 
@@ -108,8 +120,9 @@ def test_peek_ignores_non_target_category(make_video, scripted_detector):
     video = make_video(n_frames=10)
     # Cars present, but we only peek for people -> no hits.
     script = [[_car()], [_car()], [_car()], [], []]
-    res = peek_video(video, targets=("person",), n_samples=5, min_hits=1,
-                     detector=scripted_detector(script))
+    res = peek_video(
+        video, targets=("person",), n_samples=5, min_hits=1, detector=scripted_detector(script)
+    )
     assert res.frames_with_hits == 0
     assert res.counts == {"person": 0}
     assert res.interesting is False
@@ -118,8 +131,13 @@ def test_peek_ignores_non_target_category(make_video, scripted_detector):
 def test_peek_multi_target_counts(make_video, scripted_detector):
     video = make_video(n_frames=10)
     script = [[_person(), _car()], [_car()], [], [_person()], []]
-    res = peek_video(video, targets=("person", "vehicle"), n_samples=5, min_hits=1,
-                     detector=scripted_detector(script))
+    res = peek_video(
+        video,
+        targets=("person", "vehicle"),
+        n_samples=5,
+        min_hits=1,
+        detector=scripted_detector(script),
+    )
     assert res.counts == {"person": 2, "vehicle": 2}
     assert res.frames_with_hits == 3  # frames 0, 1, 3 had a target hit
     assert res.interesting is True
@@ -127,24 +145,31 @@ def test_peek_multi_target_counts(make_video, scripted_detector):
 
 def test_peek_summary_string(make_video, scripted_detector):
     video = make_video(n_frames=6)
-    res = peek_video(video, targets=("person",), n_samples=3, min_hits=1,
-                     detector=scripted_detector([[_person()], [], []]))
+    res = peek_video(
+        video,
+        targets=("person",),
+        n_samples=3,
+        min_hits=1,
+        detector=scripted_detector([[_person()], [], []]),
+    )
     s = res.summary()
     assert "interesting" in s and "person" in s
 
 
 def test_peek_records_elapsed(make_video, scripted_detector):
     video = make_video(n_frames=6)
-    res = peek_video(video, targets=("person",), n_samples=3,
-                     detector=scripted_detector([[], [], []]))
+    res = peek_video(
+        video, targets=("person",), n_samples=3, detector=scripted_detector([[], [], []])
+    )
     assert res.elapsed_s >= 0.0
 
 
 def test_peek_videos_processes_all_clips(make_video):
     # Stateless always-person detector -> deterministic regardless of thread order.
     videos = [make_video(n_frames=8) for _ in range(3)]
-    out = peek_videos(videos, targets=("person",), min_hits=1,
-                      detector=_AlwaysPerson(), max_workers=3)
+    out = peek_videos(
+        videos, targets=("person",), min_hits=1, detector=_AlwaysPerson(), max_workers=3
+    )
     assert set(out) == {Path(v) for v in videos}
     for res in out.values():
         assert res is not None
@@ -156,16 +181,23 @@ def test_peek_videos_unreadable_maps_to_none(make_video, tmp_path):
     good = make_video(n_frames=6)
     bad = tmp_path / "empty.mp4"
     bad.write_bytes(b"")  # 0-byte file -> cannot open -> None (not a batch failure)
-    out = peek_videos([good, bad], targets=("person",), min_hits=1,
-                      detector=_AlwaysPerson(), max_workers=2)
+    out = peek_videos(
+        [good, bad], targets=("person",), min_hits=1, detector=_AlwaysPerson(), max_workers=2
+    )
     assert out[Path(good)] is not None and out[Path(good)].interesting is True
     assert out[Path(bad)] is None
 
 
 def test_peek_videos_batched_path(make_video):
     videos = [make_video(n_frames=8) for _ in range(3)]
-    out = peek_videos(videos, targets=("person",), min_hits=1,
-                      detector=_AlwaysPersonBatched(), max_workers=3, batch_size=4)
+    out = peek_videos(
+        videos,
+        targets=("person",),
+        min_hits=1,
+        detector=_AlwaysPersonBatched(),
+        max_workers=3,
+        batch_size=4,
+    )
     assert set(out) == {Path(v) for v in videos}
     for res in out.values():
         assert res is not None and res.interesting
@@ -176,10 +208,18 @@ def test_peek_videos_batched_matches_serial(make_video):
     # Content-based detector: batched (chunked) verdict/counts must equal serial peek_video,
     # which only holds if detect_batch keeps per-frame order across chunks.
     video = make_video(n_frames=10)
-    serial = peek_video(video, targets=("person",), n_samples=5, min_hits=1,
-                        detector=_PersonIfBright())
-    batched = peek_videos([video], targets=("person",), n_samples=5, min_hits=1,
-                          detector=_PersonIfBright(), batch_size=2, sample_width=None)[Path(video)]
+    serial = peek_video(
+        video, targets=("person",), n_samples=5, min_hits=1, detector=_PersonIfBright()
+    )
+    batched = peek_videos(
+        [video],
+        targets=("person",),
+        n_samples=5,
+        min_hits=1,
+        detector=_PersonIfBright(),
+        batch_size=2,
+        sample_width=None,
+    )[Path(video)]
     assert batched.counts == serial.counts
     assert batched.frames_with_hits == serial.frames_with_hits
     assert batched.interesting == serial.interesting
@@ -188,7 +228,8 @@ def test_peek_videos_batched_matches_serial(make_video):
 def test_peek_videos_falls_back_without_detect_batch(make_video):
     # _AlwaysPerson has no detect_batch -> per-frame detect fallback, still correct.
     video = make_video(n_frames=6)
-    res = peek_videos([video], targets=("person",), min_hits=1,
-                      detector=_AlwaysPerson())[Path(video)]
+    res = peek_videos([video], targets=("person",), min_hits=1, detector=_AlwaysPerson())[
+        Path(video)
+    ]
     assert res is not None and res.interesting
     assert res.counts["person"] == res.n_sampled

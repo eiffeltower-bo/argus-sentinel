@@ -15,10 +15,18 @@ DIM = 8
 
 
 def _sighting(vid, *, track_id, chip_path):
-    return Sighting(video_id=vid, camera_id="cam-1", track_id=track_id, frame_idx=track_id,
-                    ts=float(track_id), bbox=(0.0, 0.0, 1.0, 1.0), quality=0.9,
-                    chip_path=str(chip_path), embedding_space_id="fake_v1",
-                    embedding=np.ones(DIM, dtype=np.float32) / np.sqrt(DIM))
+    return Sighting(
+        video_id=vid,
+        camera_id="cam-1",
+        track_id=track_id,
+        frame_idx=track_id,
+        ts=float(track_id),
+        bbox=(0.0, 0.0, 1.0, 1.0),
+        quality=0.9,
+        chip_path=str(chip_path),
+        embedding_space_id="fake_v1",
+        embedding=np.ones(DIM, dtype=np.float32) / np.sqrt(DIM),
+    )
 
 
 @pytest.fixture
@@ -38,16 +46,17 @@ def test_purge_removes_rows_vectors_and_chips(store, tmp_path):
     new = _sighting(vid, track_id=2, chip_path=new_chip)
     store.add_sightings([old, new])
     # backdate the "old" sighting so it falls before the cutoff
-    store.conn.execute("UPDATE sightings SET created_at = '2000-01-01 00:00:00' WHERE id = ?",
-                       (old.id,))
+    store.conn.execute(
+        "UPDATE sightings SET created_at = '2000-01-01 00:00:00' WHERE id = ?", (old.id,)
+    )
     store.conn.commit()
     assert store.count_vectors() == 2
 
     n = purge(store=store, before="2020-01-01 00:00:00", actor="dpo")
     assert n == 1
-    assert [r["track_id"] for r in store.list_sightings()] == [2]   # only the new one remains
-    assert store.count_vectors() == 1                               # its vector also gone
-    assert not old_chip.exists() and new_chip.exists()              # chip file unlinked
+    assert [r["track_id"] for r in store.list_sightings()] == [2]  # only the new one remains
+    assert store.count_vectors() == 1  # its vector also gone
+    assert not old_chip.exists() and new_chip.exists()  # chip file unlinked
     assert any(r["action"] == "purge" for r in store.list_audit())
 
 
@@ -78,4 +87,7 @@ def test_audit_log_filters_by_actor(store):
     store.audit(actor="bob", action="search_by_image")
     store.audit(actor="alice", action="enroll")
     assert len(audit_log(store=store)) == 3
-    assert {r["action"] for r in audit_log(store=store, actor="alice")} == {"search_by_image", "enroll"}
+    assert {r["action"] for r in audit_log(store=store, actor="alice")} == {
+        "search_by_image",
+        "enroll",
+    }

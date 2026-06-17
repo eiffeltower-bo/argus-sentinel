@@ -98,7 +98,10 @@ class ByteTrackTracker:
             cls_id = int(row[6])
             tracks.append(
                 Track(
-                    x1, y1, x2, y2,
+                    x1,
+                    y1,
+                    x2,
+                    y2,
                     score=float(row[5]),
                     track_id=int(row[4]),
                     class_id=cls_id,

@@ -294,8 +294,16 @@ def _(alt, metrics_all, metrics_df, mo):
             ),
             color=alt.Color("id:N", legend=None),
             tooltip=[
-                "id", "first_s", "last_s", "duration_s", "n_frames",
-                "continuity", "avg_area_pct", "avg_conf", "entry_edge", "exit_edge",
+                "id",
+                "first_s",
+                "last_s",
+                "duration_s",
+                "n_frames",
+                "continuity",
+                "avg_area_pct",
+                "avg_conf",
+                "entry_edge",
+                "exit_edge",
             ],
         )
         .properties(

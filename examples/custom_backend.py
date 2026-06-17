@@ -51,9 +51,13 @@ def main() -> None:
     ap.add_argument("--min-score", type=float, default=0.25)
     args = ap.parse_args()
 
-    base = OpenVocabularyDetector(weights="yolov8s-worldv2.pt", prompt=args.prompt, device=args.device)
-    detector = MinConfidence(base, min_score=args.min_score)   # <- custom backend, drops in freely
-    tracker = ByteTrackTracker(labels=base.model.names, categories=base.model.names)  # open-vocab: labels == categories
+    base = OpenVocabularyDetector(
+        weights="yolov8s-worldv2.pt", prompt=args.prompt, device=args.device
+    )
+    detector = MinConfidence(base, min_score=args.min_score)  # <- custom backend, drops in freely
+    tracker = ByteTrackTracker(
+        labels=base.model.names, categories=base.model.names
+    )  # open-vocab: labels == categories
 
     result = VideoTracker(detector, tracker, max_frames=args.max_frames).run(args.video)
     print(f"{args.video.name}: {len(result.track_ids)} tracks (conf >= {args.min_score})")

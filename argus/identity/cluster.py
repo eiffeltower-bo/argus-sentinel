@@ -25,8 +25,10 @@ class ClusterResult:
     identity_ids: list[int]
 
     def summary(self) -> str:
-        return (f"clustered {self.n_sightings} sightings -> {self.n_clusters} provisional "
-                f"identities ({self.n_noise} noise), run {self.run_id}")
+        return (
+            f"clustered {self.n_sightings} sightings -> {self.n_clusters} provisional "
+            f"identities ({self.n_noise} noise), run {self.run_id}"
+        )
 
 
 def run_clustering(
@@ -77,6 +79,9 @@ def run_clustering(
         store.assign_cluster(member_ids, pid)
         identity_ids.append(pid)
 
-    store.audit(actor=actor, action="run_clustering",
-                details=f"run={run_id} clusters={len(identity_ids)} noise={n_noise} n={len(sightings)}")
+    store.audit(
+        actor=actor,
+        action="run_clustering",
+        details=f"run={run_id} clusters={len(identity_ids)} noise={n_noise} n={len(sightings)}",
+    )
     return ClusterResult(len(sightings), len(identity_ids), n_noise, run_id, identity_ids)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Fast-triage every clip in a folder: which ones contain something worth tracking?
 
-    uv run python examples/peek_folder.py path/to/folder --targets vehicle
+uv run python examples/peek_folder.py path/to/folder --targets vehicle
 """
 
 from __future__ import annotations
@@ -18,8 +18,13 @@ from argus import peek_videos
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("folder", type=Path, help="folder of video files")
-    ap.add_argument("--targets", nargs="+", default=["person", "vehicle"],
-                    choices=["person", "vehicle"], help="what counts as interesting")
+    ap.add_argument(
+        "--targets",
+        nargs="+",
+        default=["person", "vehicle"],
+        choices=["person", "vehicle"],
+        help="what counts as interesting",
+    )
     ap.add_argument("--glob", default="*.mp4", help="which files to scan")
     ap.add_argument("--device", default=None, help="'cuda', 'cpu', ... (default: auto)")
     ap.add_argument("--workers", type=int, default=8, help="parallel decode workers")

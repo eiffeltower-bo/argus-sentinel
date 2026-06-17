@@ -20,28 +20,56 @@ from ..track import ByteTrackTracker
 
 # Distinct BGR colors so each track ID keeps the same color across the clip.
 TRACK_PALETTE = [
-    (66, 135, 245), (245, 66, 66), (66, 245, 102), (245, 209, 66),
-    (200, 66, 245), (66, 245, 230), (245, 138, 66), (138, 66, 245),
-    (66, 245, 156), (245, 66, 167), (147, 245, 66), (66, 173, 245),
+    (66, 135, 245),
+    (245, 66, 66),
+    (66, 245, 102),
+    (245, 209, 66),
+    (200, 66, 245),
+    (66, 245, 230),
+    (245, 138, 66),
+    (138, 66, 245),
+    (66, 245, 156),
+    (245, 66, 167),
+    (147, 245, 66),
+    (66, 173, 245),
 ]
 
 
 # Explicit schemas so empty results still return a typed, selectable DataFrame.
 _TRACKS_SCHEMA = {
-    "frame": pl.Int64, "time_s": pl.Float64, "id": pl.Int64,
-    "category": pl.Utf8, "label": pl.Utf8, "score": pl.Float64,
-    "x1": pl.Float64, "y1": pl.Float64, "x2": pl.Float64, "y2": pl.Float64,
+    "frame": pl.Int64,
+    "time_s": pl.Float64,
+    "id": pl.Int64,
+    "category": pl.Utf8,
+    "label": pl.Utf8,
+    "score": pl.Float64,
+    "x1": pl.Float64,
+    "y1": pl.Float64,
+    "x2": pl.Float64,
+    "y2": pl.Float64,
     "area_px": pl.Float64,
 }
 _METRICS_SCHEMA = {
-    "id": pl.Int64, "category": pl.Utf8, "type": pl.Utf8,
-    "first_s": pl.Float64, "last_s": pl.Float64, "duration_s": pl.Float64,
-    "n_frames": pl.Int64, "continuity": pl.Float64,
-    "avg_w": pl.Float64, "avg_h": pl.Float64, "avg_area_px": pl.Float64,
-    "avg_area_pct": pl.Float64, "min_area_px": pl.Float64, "max_area_px": pl.Float64,
-    "avg_conf": pl.Float64, "min_conf": pl.Float64,
-    "entry_edge": pl.Utf8, "exit_edge": pl.Utf8,
-    "first_frame": pl.Int64, "last_frame": pl.Int64,
+    "id": pl.Int64,
+    "category": pl.Utf8,
+    "type": pl.Utf8,
+    "first_s": pl.Float64,
+    "last_s": pl.Float64,
+    "duration_s": pl.Float64,
+    "n_frames": pl.Int64,
+    "continuity": pl.Float64,
+    "avg_w": pl.Float64,
+    "avg_h": pl.Float64,
+    "avg_area_px": pl.Float64,
+    "avg_area_pct": pl.Float64,
+    "min_area_px": pl.Float64,
+    "max_area_px": pl.Float64,
+    "avg_conf": pl.Float64,
+    "min_conf": pl.Float64,
+    "entry_edge": pl.Utf8,
+    "exit_edge": pl.Utf8,
+    "first_frame": pl.Int64,
+    "last_frame": pl.Int64,
 }
 
 
@@ -84,16 +112,21 @@ class TrackingResult:
         rows = []
         for fi, tracks in self.frames:
             for t in tracks:
-                rows.append({
-                    "frame": fi,
-                    "time_s": fi / self.fps,
-                    "id": t.track_id,
-                    "category": t.category,
-                    "label": t.label,
-                    "score": t.score,
-                    "x1": t.x1, "y1": t.y1, "x2": t.x2, "y2": t.y2,
-                    "area_px": (t.x2 - t.x1) * (t.y2 - t.y1),
-                })
+                rows.append(
+                    {
+                        "frame": fi,
+                        "time_s": fi / self.fps,
+                        "id": t.track_id,
+                        "category": t.category,
+                        "label": t.label,
+                        "score": t.score,
+                        "x1": t.x1,
+                        "y1": t.y1,
+                        "x2": t.x2,
+                        "y2": t.y2,
+                        "area_px": (t.x2 - t.x1) * (t.y2 - t.y1),
+                    }
+                )
         return pl.DataFrame(rows, schema=_TRACKS_SCHEMA)
 
     def metrics(self) -> pl.DataFrame:
@@ -105,10 +138,19 @@ class TrackingResult:
                 box = t.xyxy
                 r = stats.get(t.track_id)
                 if r is None:
-                    r = {"first_frame": fi, "first_box": box, "n": 0,
-                         "sum_w": 0.0, "sum_h": 0.0, "sum_area": 0.0,
-                         "min_area": area, "max_area": area,
-                         "sum_conf": 0.0, "min_conf": t.score, "cls_counts": {}}
+                    r = {
+                        "first_frame": fi,
+                        "first_box": box,
+                        "n": 0,
+                        "sum_w": 0.0,
+                        "sum_h": 0.0,
+                        "sum_area": 0.0,
+                        "min_area": area,
+                        "max_area": area,
+                        "sum_conf": 0.0,
+                        "min_conf": t.score,
+                        "cls_counts": {},
+                    }
                     stats[t.track_id] = r
                 r["last_frame"] = fi
                 r["last_box"] = box
@@ -128,28 +170,30 @@ class TrackingResult:
         for tid, r in sorted(stats.items()):
             span = r["last_frame"] - r["first_frame"] + 1
             (dom_cat, dom_label) = max(r["cls_counts"], key=r["cls_counts"].get)
-            rows.append({
-                "id": tid,
-                "category": dom_cat,
-                "type": dom_label,
-                "first_s": r["first_frame"] / self.fps,
-                "last_s": r["last_frame"] / self.fps,
-                "duration_s": span / self.fps,
-                "n_frames": r["n"],
-                "continuity": r["n"] / span,
-                "avg_w": r["sum_w"] / r["n"],
-                "avg_h": r["sum_h"] / r["n"],
-                "avg_area_px": r["sum_area"] / r["n"],
-                "avg_area_pct": r["sum_area"] / r["n"] / frame_area * 100,
-                "min_area_px": r["min_area"],
-                "max_area_px": r["max_area"],
-                "avg_conf": r["sum_conf"] / r["n"],
-                "min_conf": r["min_conf"],
-                "entry_edge": edge_of(r["first_box"], self.width, self.height),
-                "exit_edge": edge_of(r["last_box"], self.width, self.height),
-                "first_frame": r["first_frame"],
-                "last_frame": r["last_frame"],
-            })
+            rows.append(
+                {
+                    "id": tid,
+                    "category": dom_cat,
+                    "type": dom_label,
+                    "first_s": r["first_frame"] / self.fps,
+                    "last_s": r["last_frame"] / self.fps,
+                    "duration_s": span / self.fps,
+                    "n_frames": r["n"],
+                    "continuity": r["n"] / span,
+                    "avg_w": r["sum_w"] / r["n"],
+                    "avg_h": r["sum_h"] / r["n"],
+                    "avg_area_px": r["sum_area"] / r["n"],
+                    "avg_area_pct": r["sum_area"] / r["n"] / frame_area * 100,
+                    "min_area_px": r["min_area"],
+                    "max_area_px": r["max_area"],
+                    "avg_conf": r["sum_conf"] / r["n"],
+                    "min_conf": r["min_conf"],
+                    "entry_edge": edge_of(r["first_box"], self.width, self.height),
+                    "exit_edge": edge_of(r["last_box"], self.width, self.height),
+                    "first_frame": r["first_frame"],
+                    "last_frame": r["last_frame"],
+                }
+            )
         return pl.DataFrame(rows, schema=_METRICS_SCHEMA)
 
     def render(self, output_path, *, display_height: int = 480) -> Path:
@@ -185,17 +229,29 @@ class TrackingResult:
                 p2 = (int(t.x2 * sx), int(t.y2 * sy))
                 cv2.rectangle(disp, p1, p2, color, 2)
                 tag = f"{t.label or '?'} {t.track_id} {t.score:.2f}"
-                cv2.putText(disp, tag, (p1[0], p1[1] - 4),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
+                cv2.putText(
+                    disp, tag, (p1[0], p1[1] - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1
+                )
             vw.write(disp)
             fi += 1
         cap.release()
         vw.release()
 
         subprocess.run(
-            ["ffmpeg", "-y", "-i", str(tmp), "-an",
-             "-c:v", "libx264", "-pix_fmt", "yuv420p", str(output_path)],
-            check=True, capture_output=True,
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(tmp),
+                "-an",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                str(output_path),
+            ],
+            check=True,
+            capture_output=True,
         )
         tmp.unlink(missing_ok=True)
         return output_path
@@ -304,7 +360,10 @@ def track_video(
         if not peek.interesting:
             return TrackingResult(
                 video_path=Path(video_path),
-                fps=peek.fps, width=peek.width, height=peek.height, frames=[],
+                fps=peek.fps,
+                width=peek.width,
+                height=peek.height,
+                frames=[],
             )
     detector = detector or UltralyticsDetector(
         weights=weights, classes=classes_for(targets), conf=conf, device=device

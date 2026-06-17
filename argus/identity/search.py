@@ -36,8 +36,12 @@ def search_by_image(
         vec, space_id, top_k=top_k, cameras=cameras, since=since, min_quality=min_quality
     )
     query_ref = str(probe) if isinstance(probe, (str, Path)) else None
-    store.audit(actor=actor, action="search_by_image", query_ref=query_ref,
-                details=f"top_k={top_k} hits={len(hits)}")
+    store.audit(
+        actor=actor,
+        action="search_by_image",
+        query_ref=query_ref,
+        details=f"top_k={top_k} hits={len(hits)}",
+    )
     return hits
 
 
@@ -60,10 +64,19 @@ def search_by_sighting(
     if src is None or vec is None:
         raise ValueError(f"no sighting {sighting_id} (or it has no embedding)")
     hits = store.search_sightings(
-        vec, src.embedding_space_id, top_k=top_k + 1,
-        cameras=cameras, since=since, min_quality=min_quality,
+        vec,
+        src.embedding_space_id,
+        top_k=top_k + 1,
+        cameras=cameras,
+        since=since,
+        min_quality=min_quality,
     )
     hits = [h for h in hits if h.sighting.id != sighting_id][:top_k]
-    store.audit(actor=actor, action="search_by_sighting", target_type="sighting",
-                target_id=sighting_id, details=f"top_k={top_k} hits={len(hits)}")
+    store.audit(
+        actor=actor,
+        action="search_by_sighting",
+        target_type="sighting",
+        target_id=sighting_id,
+        details=f"top_k={top_k} hits={len(hits)}",
+    )
     return hits

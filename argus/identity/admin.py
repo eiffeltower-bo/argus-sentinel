@@ -39,12 +39,21 @@ def enroll(
         chip_path = store.chips_dir / f"enroll_i{identity_id}_{i}.png"
         cv2.imwrite(str(chip_path), chip)
         store.add_enrollment(
-            Enrollment(identity_id=identity_id, chip_path=str(chip_path),
-                       embedding_space_id=space_id, source=source),
+            Enrollment(
+                identity_id=identity_id,
+                chip_path=str(chip_path),
+                embedding_space_id=space_id,
+                source=source,
+            ),
             vec,
         )
-    store.audit(actor=actor, action="enroll", target_type="identity", target_id=identity_id,
-                details=f"label={label!r} n={len(list(images)) if hasattr(images, '__len__') else '?'}")
+    store.audit(
+        actor=actor,
+        action="enroll",
+        target_type="identity",
+        target_id=identity_id,
+        details=f"label={label!r} n={len(list(images)) if hasattr(images, '__len__') else '?'}",
+    )
     return identity_id
 
 

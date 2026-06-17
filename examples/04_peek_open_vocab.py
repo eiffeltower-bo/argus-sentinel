@@ -66,7 +66,7 @@ def _(Path, folder):
 
 
 @app.cell
-def _(mo, mp4_files: "dict[str, Path]"):
+def _(mo, mp4_files: "dict[str, Path]"):  # noqa: F821 (Path is a marimo-injected cell var)
     file_select = mo.ui.multiselect(
         options={_name: str(_path) for _name, _path in mp4_files.items()},
         value=[],
@@ -93,7 +93,9 @@ def _(file_select, mo):
         len(file_select.value) == 0,
         mo.md("_Select one or more videos from the list above._"),
     )
-    mo.md(f"**{len(file_select.value)}** video(s) selected — click **Peek selected** to scan them.")
+    mo.md(
+        f"**{len(file_select.value)}** video(s) selected — click **Peek selected** to scan them."
+    )
     return
 
 
@@ -126,9 +128,7 @@ def _(
     with mo.status.spinner(
         title=f"Peeking {len(_paths)} clips for '{prompt.value}' ({workers.value} workers)..."
     ):
-        _peeks = peek_videos(
-            _paths, detector=peek_detector, max_workers=workers.value
-        )
+        _peeks = peek_videos(_paths, detector=peek_detector, max_workers=workers.value)
     wall_s = time.perf_counter() - _t0
 
     results = []
@@ -138,8 +138,14 @@ def _(
             skipped.append(_p.name)
             continue
         results.append(
-            (_p.name, _pk.interesting, dict(_pk.counts),
-             _pk.frames_with_hits, _pk.n_sampled, _pk.elapsed_s)
+            (
+                _p.name,
+                _pk.interesting,
+                dict(_pk.counts),
+                _pk.frames_with_hits,
+                _pk.n_sampled,
+                _pk.elapsed_s,
+            )
         )
     return results, skipped, wall_s
 

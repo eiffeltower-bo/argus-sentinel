@@ -57,8 +57,7 @@ def _():
 def _(Path):
     DATASET = Path("/home/pepe/data/shoplifting_dataset")
     clips_by_cat = {
-        cat: sorted((DATASET / cat).glob("*.mp4"))
-        for cat in ("normal", "shoplifting")
+        cat: sorted((DATASET / cat).glob("*.mp4")) for cat in ("normal", "shoplifting")
     }
     return (clips_by_cat,)
 

@@ -28,7 +28,9 @@ async def _run(url: str, directory: str, glob: str) -> None:
 
             lc = await session.call_tool("list_clips", {"directory": directory, "glob": glob})
             clips = lc.structuredContent["clips"]
-            print(f"list_clips({directory!r}, {glob!r}) -> {lc.structuredContent['n_clips']} clips")
+            print(
+                f"list_clips({directory!r}, {glob!r}) -> {lc.structuredContent['n_clips']} clips"
+            )
 
             if not clips:
                 print("no clips found — point --dir at a folder with videos")

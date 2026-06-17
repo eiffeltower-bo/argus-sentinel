@@ -41,8 +41,17 @@ def extract_audio(video_path, output_audio_path=None, *, sample_rate: int = 1600
         output_audio_path = Path(output_audio_path)
         output_audio_path.parent.mkdir(parents=True, exist_ok=True)
 
-    cmd = ["ffmpeg", "-y", "-i", str(video_path),
-           "-ar", str(sample_rate), "-ac", "1", str(output_audio_path)]
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video_path),
+        "-ar",
+        str(sample_rate),
+        "-ac",
+        "1",
+        str(output_audio_path),
+    ]
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:

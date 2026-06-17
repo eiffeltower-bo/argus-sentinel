@@ -83,7 +83,11 @@ def _(all_files, mo):
     date_from = mo.ui.datetime(value=_lo, label="from")
     date_to = mo.ui.datetime(value=_hi, label="to")
     target_pick = mo.ui.dropdown(
-        {"person + vehicle": ("person", "vehicle"), "person": ("person",), "vehicle": ("vehicle",)},
+        {
+            "person + vehicle": ("person", "vehicle"),
+            "person": ("person",),
+            "vehicle": ("vehicle",),
+        },
         value="person + vehicle",
         label="looking for",
     )
@@ -150,8 +154,15 @@ def _(in_range, mo, peek_detector, peek_run, peek_videos, target_pick, time, wor
             skipped.append(_p.name)  # unreadable / corrupt (e.g. 0-byte file)
             continue
         results.append(
-            (_p.name, _dt_by_path[_p], _pk.interesting, dict(_pk.counts),
-             _pk.frames_with_hits, _pk.n_sampled, _pk.elapsed_s)
+            (
+                _p.name,
+                _dt_by_path[_p],
+                _pk.interesting,
+                dict(_pk.counts),
+                _pk.frames_with_hits,
+                _pk.n_sampled,
+                _pk.elapsed_s,
+            )
         )
     return results, skipped, wall_s
 

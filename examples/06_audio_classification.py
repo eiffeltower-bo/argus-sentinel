@@ -71,12 +71,25 @@ def _(Path, folder, glob, mo):
     )
     overlap = mo.ui.slider(0.0, 4.0, value=1.0, step=0.5, label="overlap (s)")
     segment = mo.ui.slider(1.0, 10.0, value=5.0, step=1.0, label="segment (s)")
-    labels_input = mo.ui.text(value="gunshot, glass breaking, scream, speech",
-                              label="CLAP candidate labels (comma-separated)", full_width=True)
+    labels_input = mo.ui.text(
+        value="gunshot, glass breaking, scream, speech",
+        label="CLAP candidate labels (comma-separated)",
+        full_width=True,
+    )
     device = mo.ui.dropdown(["cuda", "cpu"], value="cuda", label="device")
     run_btn = mo.ui.run_button(label="Classify audio")
-    mo.vstack([mo.md(f"**{len(_clips)}** clips found."),
-               clip_pick, model, overlap, segment, labels_input, device, run_btn])
+    mo.vstack(
+        [
+            mo.md(f"**{len(_clips)}** clips found."),
+            clip_pick,
+            model,
+            overlap,
+            segment,
+            labels_input,
+            device,
+            run_btn,
+        ]
+    )
     return clip_pick, device, labels_input, model, overlap, run_btn, segment
 
 

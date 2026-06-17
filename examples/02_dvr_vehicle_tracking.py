@@ -295,8 +295,17 @@ def _(alt, metrics_all, metrics_df, mo):
             ),
             color=alt.Color("type:N", title="vehicle type"),
             tooltip=[
-                "id", "type", "first_s", "last_s", "duration_s", "n_frames",
-                "continuity", "avg_area_pct", "avg_conf", "entry_edge", "exit_edge",
+                "id",
+                "type",
+                "first_s",
+                "last_s",
+                "duration_s",
+                "n_frames",
+                "continuity",
+                "avg_area_pct",
+                "avg_conf",
+                "entry_edge",
+                "exit_edge",
             ],
         )
         .properties(

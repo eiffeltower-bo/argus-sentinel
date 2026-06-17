@@ -9,7 +9,11 @@ from __future__ import annotations
 # COCO classes we care about, and how they roll up into categories.
 COCO_LABELS: dict[int, str] = {0: "person", 2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
 CATEGORY_BY_CLASS: dict[int, str] = {
-    0: "person", 2: "vehicle", 3: "vehicle", 5: "vehicle", 7: "vehicle"
+    0: "person",
+    2: "vehicle",
+    3: "vehicle",
+    5: "vehicle",
+    7: "vehicle",
 }
 TARGET_CLASSES: dict[str, list[int]] = {"person": [0], "vehicle": [2, 3, 5, 7]}
 

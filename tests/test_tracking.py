@@ -86,6 +86,6 @@ def test_bytetrack_output_row_contract():
     frame = np.zeros((720, 1280, 3), np.uint8)
     t = trk.update([Detection(300, 300, 460, 460, 0.9, class_id=7)], frame)[0]
     assert isinstance(t.track_id, int) and t.track_id >= 1  # row[4]
-    assert t.score == pytest.approx(0.9, abs=0.05)          # row[5]
-    assert t.class_id == 7 and t.label == "truck"           # row[6] -> COCO_LABELS
+    assert t.score == pytest.approx(0.9, abs=0.05)  # row[5]
+    assert t.class_id == 7 and t.label == "truck"  # row[6] -> COCO_LABELS
     assert t.category == "vehicle"

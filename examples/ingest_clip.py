@@ -22,8 +22,12 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("video", type=Path, help="path to a video clip")
     ap.add_argument("--camera", default=None, help="camera id (default: clip stem)")
-    ap.add_argument("--db", type=Path, default=Path("out/examples/faceid/argus.db"),
-                    help="store path (default: out/examples/faceid/argus.db)")
+    ap.add_argument(
+        "--db",
+        type=Path,
+        default=Path("out/examples/faceid/argus.db"),
+        help="store path (default: out/examples/faceid/argus.db)",
+    )
     ap.add_argument("--device", default=None, help="'cuda', 'cpu', ... (default: auto)")
     ap.add_argument("--max-frames", type=int, default=None, help="cap frames processed")
     ap.add_argument("--stride", type=int, default=1, help="process every Nth frame")
@@ -42,8 +46,10 @@ def main() -> None:
 
     print(result.summary())
     for s in store.list_sightings():
-        print(f"  track {s['track_id']:>3}  frame {s['frame_idx']:>5}  "
-              f"t={s['ts']:6.2f}s  q={s['quality']:.3f}  chip={s['chip_path']}")
+        print(
+            f"  track {s['track_id']:>3}  frame {s['frame_idx']:>5}  "
+            f"t={s['ts']:6.2f}s  q={s['quality']:.3f}  chip={s['chip_path']}"
+        )
     print(f"\nstore: {args.db}  ({store.count_vectors()} vectors)")
     store.close()
 

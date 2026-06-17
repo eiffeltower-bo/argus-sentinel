@@ -22,15 +22,28 @@ _EMPTY_VEC = np.empty((0,), dtype=np.float32)  # search hits carry metadata, not
 
 
 def _row_to_identity(row) -> Identity:
-    return Identity(type=row["type"], label=row["label"], created_by=row["created_by"],
-                    created_at=row["created_at"], notes=row["notes"], id=row["id"])
+    return Identity(
+        type=row["type"],
+        label=row["label"],
+        created_by=row["created_by"],
+        created_at=row["created_at"],
+        notes=row["notes"],
+        id=row["id"],
+    )
 
 
 def _row_to_identity_dict(ident: Identity | None) -> dict | None:
     if ident is None:
         return None
-    return {"id": ident.id, "type": ident.type, "label": ident.label,
-            "created_by": ident.created_by, "created_at": ident.created_at, "notes": ident.notes}
+    return {
+        "id": ident.id,
+        "type": ident.type,
+        "label": ident.label,
+        "created_by": ident.created_by,
+        "created_at": ident.created_at,
+        "notes": ident.notes,
+    }
+
 
 # Relational schema. identities/enrollments/cluster_runs/audit_log back the search, clustering,
 # and compliance phases; ingest writes only videos + sightings (+ the vector index).
@@ -103,7 +116,9 @@ class SqliteStore:
 
         self.db_path = Path(db_path)
         self.dim = dim
-        self.chips_dir = Path(chips_dir) if chips_dir is not None else self.db_path.parent / "chips"
+        self.chips_dir = (
+            Path(chips_dir) if chips_dir is not None else self.db_path.parent / "chips"
+        )
         self.chips_dir.mkdir(parents=True, exist_ok=True)
 
         self.conn = sqlite3.connect(str(self.db_path))
@@ -154,16 +169,35 @@ class SqliteStore:
                 "INSERT INTO sightings (video_id, camera_id, track_id, frame_idx, ts, "
                 "x1, y1, x2, y2, quality, chip_path, embedding_space_id, identity_id, cluster_id) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (s.video_id, s.camera_id, s.track_id, s.frame_idx, s.ts,
-                 x1, y1, x2, y2, s.quality, s.chip_path, s.embedding_space_id,
-                 s.identity_id, s.cluster_id),
+                (
+                    s.video_id,
+                    s.camera_id,
+                    s.track_id,
+                    s.frame_idx,
+                    s.ts,
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    s.quality,
+                    s.chip_path,
+                    s.embedding_space_id,
+                    s.identity_id,
+                    s.cluster_id,
+                ),
             )
             s.id = int(cur.lastrowid)
             self.conn.execute(
                 "INSERT INTO vec_sightings (rowid, embedding, embedding_space_id, camera_id, "
                 "ts, quality) VALUES (?, ?, ?, ?, ?, ?)",
-                (s.id, self._serialize([float(v) for v in s.embedding]),
-                 s.embedding_space_id, s.camera_id, s.ts, s.quality),
+                (
+                    s.id,
+                    self._serialize([float(v) for v in s.embedding]),
+                    s.embedding_space_id,
+                    s.camera_id,
+                    s.ts,
+                    s.quality,
+                ),
             )
         self.conn.commit()
 
@@ -229,8 +263,9 @@ class SqliteStore:
             if ident is not None:
                 dist = float(r["distance"])
                 hits.append(
-                    WatchlistHit(identity=ident, distance=dist, score=1.0 - dist,
-                                 chip_path=enr["chip_path"])
+                    WatchlistHit(
+                        identity=ident, distance=dist, score=1.0 - dist, chip_path=enr["chip_path"]
+                    )
                 )
         return hits
 
@@ -241,15 +276,15 @@ class SqliteStore:
         return None if row is None else np.frombuffer(row[0], dtype=np.float32)
 
     def get_sighting(self, sighting_id: int, *, with_embedding: bool = True) -> Sighting | None:
-        row = self.conn.execute(
-            "SELECT * FROM sightings WHERE id = ?", (sighting_id,)
-        ).fetchone()
+        row = self.conn.execute("SELECT * FROM sightings WHERE id = ?", (sighting_id,)).fetchone()
         if row is None:
             return None
         emb = self.get_embedding(sighting_id) if with_embedding else _EMPTY_VEC
         return self._row_to_sighting(row, emb if emb is not None else _EMPTY_VEC)
 
-    def iter_sightings(self, *, space_id: str, unassigned_only: bool = False) -> Iterator[Sighting]:
+    def iter_sightings(
+        self, *, space_id: str, unassigned_only: bool = False
+    ) -> Iterator[Sighting]:
         sql = "SELECT * FROM sightings WHERE embedding_space_id = ?"
         if unassigned_only:
             sql += " AND identity_id IS NULL"
@@ -261,12 +296,19 @@ class SqliteStore:
     @staticmethod
     def _row_to_sighting(row, embedding) -> Sighting:
         return Sighting(
-            video_id=row["video_id"], camera_id=row["camera_id"], track_id=row["track_id"],
-            frame_idx=row["frame_idx"], ts=row["ts"],
+            video_id=row["video_id"],
+            camera_id=row["camera_id"],
+            track_id=row["track_id"],
+            frame_idx=row["frame_idx"],
+            ts=row["ts"],
             bbox=(row["x1"], row["y1"], row["x2"], row["y2"]),
-            quality=row["quality"], chip_path=row["chip_path"],
-            embedding_space_id=row["embedding_space_id"], embedding=embedding,
-            identity_id=row["identity_id"], cluster_id=row["cluster_id"], id=row["id"],
+            quality=row["quality"],
+            chip_path=row["chip_path"],
+            embedding_space_id=row["embedding_space_id"],
+            embedding=embedding,
+            identity_id=row["identity_id"],
+            cluster_id=row["cluster_id"],
+            id=row["id"],
         )
 
     # ------------------------------------------------------ identity / enrollment
@@ -280,9 +322,7 @@ class SqliteStore:
         return int(cur.lastrowid)
 
     def get_identity(self, identity_id: int) -> Identity | None:
-        row = self.conn.execute(
-            "SELECT * FROM identities WHERE id = ?", (identity_id,)
-        ).fetchone()
+        row = self.conn.execute("SELECT * FROM identities WHERE id = ?", (identity_id,)).fetchone()
         return None if row is None else _row_to_identity(row)
 
     def list_identities(self, *, type: str | None = None) -> list[Identity]:
@@ -298,8 +338,12 @@ class SqliteStore:
         cur = self.conn.execute(
             "INSERT INTO enrollments (identity_id, chip_path, embedding_space_id, source) "
             "VALUES (?, ?, ?, ?)",
-            (enrollment.identity_id, enrollment.chip_path, enrollment.embedding_space_id,
-             enrollment.source),
+            (
+                enrollment.identity_id,
+                enrollment.chip_path,
+                enrollment.embedding_space_id,
+                enrollment.source,
+            ),
         )
         eid = int(cur.lastrowid)
         self.conn.execute(
@@ -317,8 +361,13 @@ class SqliteStore:
         self.conn.execute(
             "UPDATE sightings SET identity_id = ? WHERE id = ?", (identity_id, sighting_id)
         )
-        self._audit(actor=actor, action="assign_identity", target_type="sighting",
-                    target_id=sighting_id, details=f"identity_id={identity_id}")
+        self._audit(
+            actor=actor,
+            action="assign_identity",
+            target_type="sighting",
+            target_id=sighting_id,
+            details=f"identity_id={identity_id}",
+        )
         self.conn.commit()
 
     def assign_cluster(self, sighting_ids: list[int], cluster_id: int) -> None:
@@ -336,8 +385,13 @@ class SqliteStore:
             (identity_id, cluster_id),
         )
         n = int(cur.rowcount)
-        self._audit(actor=actor, action="merge", target_type="identity", target_id=identity_id,
-                    details=f"cluster_id={cluster_id} n={n}")
+        self._audit(
+            actor=actor,
+            action="merge",
+            target_type="identity",
+            target_id=identity_id,
+            details=f"cluster_id={cluster_id} n={n}",
+        )
         self.conn.commit()
         return n
 
@@ -351,18 +405,26 @@ class SqliteStore:
 
     # ------------------------------------------------------------- compliance
 
-    def _audit(self, *, actor, action, target_type=None, target_id=None,
-               query_ref=None, details=None) -> None:
+    def _audit(
+        self, *, actor, action, target_type=None, target_id=None, query_ref=None, details=None
+    ) -> None:
         self.conn.execute(
             "INSERT INTO audit_log (actor, action, target_type, target_id, query_ref, details) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (actor, action, target_type, target_id, query_ref, details),
         )
 
-    def audit(self, *, actor, action, target_type=None, target_id=None,
-              query_ref=None, details=None) -> None:
-        self._audit(actor=actor, action=action, target_type=target_type,
-                    target_id=target_id, query_ref=query_ref, details=details)
+    def audit(
+        self, *, actor, action, target_type=None, target_id=None, query_ref=None, details=None
+    ) -> None:
+        self._audit(
+            actor=actor,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            query_ref=query_ref,
+            details=details,
+        )
         self.conn.commit()
 
     def list_audit(self, *, actor: str | None = None, since: str | None = None) -> list[dict]:
@@ -411,15 +473,25 @@ class SqliteStore:
         manifest = {
             "identity": _row_to_identity_dict(ident),
             "sightings": [
-                {"id": r["id"], "camera_id": r["camera_id"], "ts": r["ts"],
-                 "quality": r["quality"], "video_id": r["video_id"],
-                 "chip": Path(r["chip_path"]).name if r["chip_path"] else None}
+                {
+                    "id": r["id"],
+                    "camera_id": r["camera_id"],
+                    "ts": r["ts"],
+                    "quality": r["quality"],
+                    "video_id": r["video_id"],
+                    "chip": Path(r["chip_path"]).name if r["chip_path"] else None,
+                }
                 for r in rows
             ],
         }
         (dest / "manifest.json").write_text(json.dumps(manifest, indent=2))
-        self._audit(actor=actor, action="export", target_type="identity",
-                    target_id=identity_id, details=f"n={len(rows)}")
+        self._audit(
+            actor=actor,
+            action="export",
+            target_type="identity",
+            target_id=identity_id,
+            details=f"n={len(rows)}",
+        )
         self.conn.commit()
         return dest
 

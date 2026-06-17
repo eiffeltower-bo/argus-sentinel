@@ -149,8 +149,12 @@ def ingest_video(
                     if prev is None or res.score > prev["quality"]:
                         best[t.track_id] = {
                             "frame_idx": read_idx,
-                            "bbox": (float(cx1 + face.x1), float(cy1 + face.y1),
-                                     float(cx1 + face.x2), float(cy1 + face.y2)),
+                            "bbox": (
+                                float(cx1 + face.x1),
+                                float(cy1 + face.y1),
+                                float(cx1 + face.x2),
+                                float(cy1 + face.y2),
+                            ),
                             "quality": res.score,
                             "chip": chip,
                         }

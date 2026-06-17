@@ -11,9 +11,7 @@ from dataclasses import replace
 from argus.core import (
     AudioPrediction,
     Detection,
-    Enrollment,
     FaceDetection,
-    Identity,
     SearchHit,
     Track,
     WatchlistHit,
@@ -65,8 +63,17 @@ class FakeTracker:
 
     def update(self, detections: list[Detection], frame: np.ndarray) -> list[Track]:
         return [
-            Track(d.x1, d.y1, d.x2, d.y2, d.score, self.track_id,
-                  class_id=d.class_id, label=d.label, category="person")
+            Track(
+                d.x1,
+                d.y1,
+                d.x2,
+                d.y2,
+                d.score,
+                self.track_id,
+                class_id=d.class_id,
+                label=d.label,
+                category="person",
+            )
             for d in detections
         ]
 
@@ -92,8 +99,11 @@ class ScriptedFaceDetector:
         self._i += 1
         h, w = image.shape[:2]
         lm = (
-            (0.35 * w, 0.40 * h), (0.65 * w, 0.40 * h), (0.50 * w, 0.55 * h),
-            (0.40 * w, 0.70 * h), (0.60 * w, 0.70 * h),
+            (0.35 * w, 0.40 * h),
+            (0.65 * w, 0.40 * h),
+            (0.50 * w, 0.55 * h),
+            (0.40 * w, 0.70 * h),
+            (0.60 * w, 0.70 * h),
         )
         return [FaceDetection(0.25 * w, 0.25 * h, 0.75 * w, 0.75 * h, score, landmarks=lm)]
 
@@ -156,15 +166,21 @@ class FakeStore:
         self.videos: list[dict] = []
         self.sightings: list = []
         self.identities: list = []
-        self.enrollments: list = []          # (Enrollment, vec)
+        self.enrollments: list = []  # (Enrollment, vec)
         self.cluster_runs: list = []
         self.audit_rows: list[dict] = []
 
     # --- write path ---
     def add_video(self, camera_id, path, *, fps, duration_s, width, height) -> int:
         self.videos.append(
-            {"camera_id": camera_id, "path": path, "fps": fps,
-             "duration_s": duration_s, "width": width, "height": height}
+            {
+                "camera_id": camera_id,
+                "path": path,
+                "fps": fps,
+                "duration_s": duration_s,
+                "width": width,
+                "height": height,
+            }
         )
         return len(self.videos)
 
@@ -182,14 +198,18 @@ class FakeStore:
             cand = [s for s in cand if s.ts >= since]
         if min_quality > 0.0:
             cand = [s for s in cand if s.quality >= min_quality]
-        scored = sorted(((1.0 - float(np.dot(vec, s.embedding)), s) for s in cand),
-                        key=lambda x: x[0])
+        scored = sorted(
+            ((1.0 - float(np.dot(vec, s.embedding)), s) for s in cand), key=lambda x: x[0]
+        )
         return [SearchHit(sighting=s, distance=d, score=1.0 - d) for d, s in scored[:top_k]]
 
     def search_enrollments(self, vec, space_id, *, top_k):
         scored = sorted(
-            ((1.0 - float(np.dot(vec, v)), e) for e, v in self.enrollments
-             if e.embedding_space_id == space_id),
+            (
+                (1.0 - float(np.dot(vec, v)), e)
+                for e, v in self.enrollments
+                if e.embedding_space_id == space_id
+            ),
             key=lambda x: x[0],
         )
         hits, seen = [], set()
@@ -197,8 +217,14 @@ class FakeStore:
             if e.identity_id in seen:
                 continue
             seen.add(e.identity_id)
-            hits.append(WatchlistHit(identity=self.get_identity(e.identity_id), distance=d,
-                                     score=1.0 - d, chip_path=e.chip_path))
+            hits.append(
+                WatchlistHit(
+                    identity=self.get_identity(e.identity_id),
+                    distance=d,
+                    score=1.0 - d,
+                    chip_path=e.chip_path,
+                )
+            )
         return hits
 
     def get_sighting(self, sighting_id, *, with_embedding=True):
@@ -238,8 +264,13 @@ class FakeStore:
         s = self.get_sighting(sighting_id)
         if s is not None:
             s.identity_id = identity_id
-        self.audit(actor=actor, action="assign_identity", target_type="sighting",
-                   target_id=sighting_id, details=f"identity_id={identity_id}")
+        self.audit(
+            actor=actor,
+            action="assign_identity",
+            target_type="sighting",
+            target_id=sighting_id,
+            details=f"identity_id={identity_id}",
+        )
 
     def assign_cluster(self, sighting_ids, cluster_id) -> None:
         for s in self.sightings:
@@ -251,8 +282,13 @@ class FakeStore:
         for s in self.sightings:
             if s.cluster_id == cluster_id:
                 s.identity_id, s.cluster_id, n = identity_id, None, n + 1
-        self.audit(actor=actor, action="merge", target_type="identity", target_id=identity_id,
-                   details=f"cluster_id={cluster_id} n={n}")
+        self.audit(
+            actor=actor,
+            action="merge",
+            target_type="identity",
+            target_id=identity_id,
+            details=f"cluster_id={cluster_id} n={n}",
+        )
         return n
 
     def add_cluster_run(self, algo, params, space_id) -> int:
@@ -260,17 +296,26 @@ class FakeStore:
         return len(self.cluster_runs)
 
     # --- compliance ---
-    def audit(self, *, actor, action, target_type=None, target_id=None, query_ref=None,
-              details=None) -> None:
+    def audit(
+        self, *, actor, action, target_type=None, target_id=None, query_ref=None, details=None
+    ) -> None:
         self.audit_rows.append(
-            {"actor": actor, "action": action, "target_type": target_type,
-             "target_id": target_id, "query_ref": query_ref, "details": details}
+            {
+                "actor": actor,
+                "action": action,
+                "target_type": target_type,
+                "target_id": target_id,
+                "query_ref": query_ref,
+                "details": details,
+            }
         )
 
     def list_audit(self, *, actor=None, since=None):
         return [r for r in self.audit_rows if actor is None or r["actor"] == actor]
 
-    def purge(self, *, before, actor="unknown") -> int:  # in-memory: real semantics tested on sqlite
+    def purge(
+        self, *, before, actor="unknown"
+    ) -> int:  # in-memory: real semantics tested on sqlite
         n = len(self.sightings)
         self.sightings.clear()
         self.audit(actor=actor, action="purge", details=f"before={before} n={n}")

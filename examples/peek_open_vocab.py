@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Fast-triage every clip in a folder with open-vocabulary detection (YOLO-World).
 
-    uv run python examples/peek_open_vocab.py path/to/folder --prompt helmet
+uv run python examples/peek_open_vocab.py path/to/folder --prompt helmet
 """
 
 from __future__ import annotations
@@ -39,7 +39,9 @@ def main() -> None:
         imgsz=args.imgsz,
     )
     results = peek_videos(
-        clips, detector=detector, max_workers=args.workers,
+        clips,
+        detector=detector,
+        max_workers=args.workers,
     )
     interesting = {p: r for p, r in results.items() if r and r.interesting}
     unreadable = [p for p, r in results.items() if r is None]

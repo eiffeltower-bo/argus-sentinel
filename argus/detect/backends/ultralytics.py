@@ -7,15 +7,22 @@ import numpy as np
 from ...core import CATEGORY_BY_CLASS, Detection
 
 
-def _boxes_to_detections(result, names, categories: dict[int, str] | None = None) -> list[Detection]:
+def _boxes_to_detections(
+    result, names, categories: dict[int, str] | None = None
+) -> list[Detection]:
     dets: list[Detection] = []
     for b in result.boxes:
         x1, y1, x2, y2 = b.xyxy[0].tolist()
         cls_id = int(b.cls[0])
         dets.append(
             Detection(
-                x1, y1, x2, y2, float(b.conf[0]),
-                class_id=cls_id, label=names.get(cls_id),
+                x1,
+                y1,
+                x2,
+                y2,
+                float(b.conf[0]),
+                class_id=cls_id,
+                label=names.get(cls_id),
                 category=categories.get(cls_id) if categories else None,
             )
         )

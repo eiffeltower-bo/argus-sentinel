@@ -96,8 +96,11 @@ def peek_video(
     if detector is None:
         _targets = targets if targets is not None else ("person", "vehicle")
         detector = UltralyticsDetector(
-            weights=weights, classes=classes_for(_targets), conf=conf,
-            device=device, imgsz=imgsz,
+            weights=weights,
+            classes=classes_for(_targets),
+            conf=conf,
+            device=device,
+            imgsz=imgsz,
         )
     else:
         _targets = targets if targets is not None else detector.targets
@@ -112,9 +115,16 @@ def peek_video(
         frames_with_hits += _tally(detector.detect(_frame), counts)
 
     return PeekResult(
-        video_path=video_path, fps=fps, width=w, height=h, total_frames=total,
-        n_sampled=len(frames), frames_with_hits=frames_with_hits, counts=counts,
-        min_hits=min_hits, elapsed_s=time.perf_counter() - started,
+        video_path=video_path,
+        fps=fps,
+        width=w,
+        height=h,
+        total_frames=total,
+        n_sampled=len(frames),
+        frames_with_hits=frames_with_hits,
+        counts=counts,
+        min_hits=min_hits,
+        elapsed_s=time.perf_counter() - started,
     )
 
 
@@ -153,8 +163,11 @@ def peek_videos(
     if detector is None:
         _targets = targets if targets is not None else ("person", "vehicle")
         detector = UltralyticsDetector(
-            weights=weights, classes=classes_for(_targets), conf=conf,
-            device=device, imgsz=imgsz,
+            weights=weights,
+            classes=classes_for(_targets),
+            conf=conf,
+            device=device,
+            imgsz=imgsz,
         )
     else:
         _targets = targets if targets is not None else detector.targets
@@ -194,9 +207,16 @@ def peek_videos(
         for frame_dets in detections[start:end]:
             frames_with_hits += _tally(frame_dets, counts)
         out[p] = PeekResult(
-            video_path=p, fps=fps, width=w, height=h, total_frames=total,
-            n_sampled=len(frames), frames_with_hits=frames_with_hits, counts=counts,
-            min_hits=min_hits, elapsed_s=decode_s,
+            video_path=p,
+            fps=fps,
+            width=w,
+            height=h,
+            total_frames=total,
+            n_sampled=len(frames),
+            frames_with_hits=frames_with_hits,
+            counts=counts,
+            min_hits=min_hits,
+            elapsed_s=decode_s,
         )
     for p in unreadable:
         out[p] = None
