@@ -652,13 +652,8 @@ def test_enroll_identity_requires_exactly_one_source(monkeypatch):
         server.enroll_identity("X", images=["a"], upload_ids=["b"])  # two
 
 
-def test_get_face_chip_returns_image(tmp_path, monkeypatch):
-    import cv2
-    from mcp.server.fastmcp import Image
-
-    chip = tmp_path / "chip.png"
-    cv2.imwrite(str(chip), np.zeros((112, 112, 3), np.uint8))
-    sighting = Sighting(
+def _chip_sighting(chip_path, sid=5):
+    return Sighting(
         video_id=1,
         camera_id="c",
         track_id=1,
@@ -666,11 +661,21 @@ def test_get_face_chip_returns_image(tmp_path, monkeypatch):
         ts=1.0,
         bbox=(0, 0, 1, 1),
         quality=0.9,
-        chip_path=str(chip),
+        chip_path=str(chip_path),
         embedding_space_id="x",
         embedding=np.zeros(4, np.float32),
-        id=5,
+        id=sid,
     )
+
+
+def test_get_face_chip_returns_image_and_link(tmp_path, monkeypatch):
+    import cv2
+    from mcp.server.fastmcp import Image
+
+    monkeypatch.delenv("ARGUS_PUBLIC_URL", raising=False)
+    chip = tmp_path / "chip.png"
+    cv2.imwrite(str(chip), np.zeros((112, 112, 3), np.uint8))
+    sighting = _chip_sighting(chip, sid=5)
 
     class _S(_FakeStore):
         def get_sighting(self, sid, *, with_embedding=True):
@@ -678,13 +683,45 @@ def test_get_face_chip_returns_image(tmp_path, monkeypatch):
 
     store = _S()
     monkeypatch.setattr(server, "_open_store", lambda: store)
-    out = server.get_face_chip(5)
-    assert isinstance(out, Image)
-    ic = out.to_image_content()  # encodes to an MCP ImageContent block
-    assert ic.type == "image" and ic.data
+    out = server.get_face_chip(5)  # ctx defaults to None → relative link
+    assert isinstance(out, list)
+    img = next(o for o in out if isinstance(o, Image))
+    assert img.to_image_content().type == "image"  # encodes to an MCP ImageContent block
+    link = next(o for o in out if isinstance(o, str))
+    assert "/chip/5" in link  # the viewer URL is surfaced for the operator
     with pytest.raises(ValueError):
         server.get_face_chip(999)  # missing sighting
     assert store.closed is True
+
+
+def test_chip_base_url_prefers_env(monkeypatch):
+    monkeypatch.setenv("ARGUS_PUBLIC_URL", "http://host:8001/")
+    assert server._chip_base_url(None) == "http://host:8001"  # trailing slash trimmed
+    monkeypatch.delenv("ARGUS_PUBLIC_URL", raising=False)
+    assert server._chip_base_url(None) == ""  # no env, no request → caller uses a relative path
+
+
+def test_chip_route_serves_png(tmp_path, monkeypatch):
+    import cv2
+    from starlette.testclient import TestClient
+
+    chip = tmp_path / "c.png"
+    cv2.imwrite(str(chip), np.zeros((112, 112, 3), np.uint8))
+    sighting = _chip_sighting(chip, sid=7)
+
+    class _S(_FakeStore):
+        def get_sighting(self, sid, *, with_embedding=True):
+            return sighting if sid == 7 else None
+
+    monkeypatch.setattr(server, "_open_store", lambda: _S())
+    # No `with` (no lifespan): custom routes don't need the MCP session manager, and FastMCP's
+    # shared manager can only be .run() once per process (test_upload_route_roundtrip uses it).
+    client = TestClient(server.mcp.streamable_http_app(), base_url="http://localhost")
+    r = client.get("/chip/7")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("image/")
+    assert r.content[:8].hex() == "89504e470d0a1a0a"  # PNG magic bytes
+    assert client.get("/chip/999").status_code == 404  # unknown sighting
 
 
 def test_upload_route_roundtrip(tmp_path, monkeypatch):

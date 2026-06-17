@@ -75,6 +75,10 @@ services:
       # Persistent sighting store for the face-ID tools (ingest_clip/search_*/…). Defaults under the
       # bind-mounted ./out so the DB + face chips survive container restarts.
       ARGUS_DB: ${ARGUS_DB:-/app/out/argus.db}
+      # Public URL operators reach the server at (e.g. http://host:8001). Used to build clickable
+      # links to the GET /chip/<id> face viewer that get_face_chip returns. If unset, the link is
+      # derived from each request's Host header (set this when a connector proxies requests).
+      ARGUS_PUBLIC_URL: ${ARGUS_PUBLIC_URL:-}
       # OAuth 2.1 (Resource Server). Off by default; flip ARGUS_MCP_AUTH=on (+ bring up the
       # keycloak service) to require tokens. See the "hostname" note below / mcp-server.md.
       ARGUS_MCP_AUTH: ${ARGUS_MCP_AUTH:-off}

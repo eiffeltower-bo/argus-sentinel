@@ -42,6 +42,7 @@ Key `.env` settings:
 | `TORCH_INDEX` | `…/whl/cpu` (default, runs anywhere) or `…/whl/cu126` (NVIDIA GPU). |
 | `EXTRAS` | Features baked in, e.g. `[face-gpu,store,cluster,audio,open-vocab]` (CPU: `face` instead of `face-gpu`). |
 | `ARGUS_DB` | Sighting store path. Default `/app/out/argus.db` (under the bind-mounted `./out`), so ingested faces **persist across restarts**. |
+| `ARGUS_PUBLIC_URL` | URL operators reach the server at (e.g. `http://host:8001`); makes `get_face_chip`'s `/chip/<id>` face links clickable. Optional. |
 | `ARGUS_MCP_ALLOWED_HOSTS` | Hosts allowed to reach the server (DNS-rebinding guard) when not on localhost. |
 | `ARGUS_MCP_AUTH` | `off` (default) or `on` to require OAuth 2.1 bearer tokens. |
 
@@ -80,8 +81,10 @@ Full inputs, outputs, and per-tool scopes: [context/mcp-server.md](context/mcp-s
 **Probe images from a remote client:** tool args are JSON (no binary), so a probe face is sent
 either as `image_base64` (if the client has the bytes) or via the out-of-band **`POST /upload`**
 endpoint, which returns an `upload_id` to pass to `search_face`/`enroll_identity`. A browser
-uploader lives at **`http://<host>:8000/upload`**. `get_face_chip` returns faces back as inline
-images. Details: [context/mcp-server.md](context/mcp-server.md).
+uploader lives at **`http://<host>:8000/upload`**. To view faces back, `get_face_chip` returns each
+as an inline image **plus a link** to a `GET /chip/<id>` viewer — Claude clients render tool-result
+images only inside the collapsed tool accordion, so open the link (set `ARGUS_PUBLIC_URL` to make it
+clickable). Details: [context/mcp-server.md](context/mcp-server.md).
 
 Smoke-test with the bundled client, or drive it from any MCP client:
 

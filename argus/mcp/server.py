@@ -24,10 +24,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP, Image
+from mcp.server.fastmcp import Context, FastMCP, Image
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, Response
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from argus import (
     DEFAULT_AUDIO_MODEL,
@@ -146,6 +146,26 @@ def _path_for_upload(upload_id: str) -> str:
     return str(p)
 
 
+def _chip_base_url(ctx: Context | None) -> str:
+    """Absolute base URL the ``GET /chip/<id>`` viewer is reachable at, for ``get_face_chip`` links.
+
+    Prefers ``ARGUS_PUBLIC_URL`` (set it to the URL operators reach the server at, e.g.
+    ``http://host:8001`` — guarantees a clickable link even when a connector proxies the request);
+    otherwise derives it from the incoming request's ``base_url`` (correct for localhost/LAN/dev).
+    Returns ``""`` when neither is available, so the caller falls back to a relative path.
+    """
+    base = os.environ.get("ARGUS_PUBLIC_URL", "").strip().rstrip("/")
+    if base:
+        return base
+    try:
+        req = ctx.request_context.request if ctx is not None else None
+        if req is not None:
+            return str(req.base_url).rstrip("/")
+    except Exception:  # no HTTP request in scope (e.g. a direct/in-process call)
+        pass
+    return ""
+
+
 def _resolve_probe(image: str | None, image_base64: str | None, upload_id: str | None = None):
     """Return what ``search_by_image``/``enroll`` accept: a server-side path or a BGR ndarray.
 
@@ -220,6 +240,26 @@ async def upload(request: Request) -> Response:
     upload_id = uuid.uuid4().hex[:12]
     cv2.imwrite(str(_uploads_dir() / f"{upload_id}.png"), img)
     return JSONResponse({"upload_id": upload_id})
+
+
+@mcp.custom_route("/chip/{sighting_id:int}", methods=["GET"])
+async def chip(request: Request) -> Response:
+    """Serve a sighting's aligned face chip as a browser-viewable PNG.
+
+    Companion to the ``get_face_chip`` tool: Claude clients render tool-result images only inside
+    the collapsed tool accordion, never inline, so ``get_face_chip`` also returns a link to this
+    route that an operator can open directly. Read-only; like ``/upload`` it is a custom route and
+    so bypasses MCP auth — gate at the proxy if the server is exposed untrusted.
+    """
+    sighting_id = request.path_params["sighting_id"]  # int (Starlette path converter)
+    store = _open_store()
+    try:
+        s = store.get_sighting(sighting_id, with_embedding=False)
+    finally:
+        store.close()
+    if s is None or not s.chip_path or not Path(s.chip_path).exists():
+        return JSONResponse({"error": f"no chip for sighting {sighting_id}"}, status_code=404)
+    return FileResponse(s.chip_path, media_type="image/png")
 
 
 @mcp.tool()
@@ -568,12 +608,14 @@ def enroll_identity(
 
 
 @mcp.tool()
-def get_face_chip(sighting_id: int) -> Image:
-    """Return a sighting's aligned face chip as an inline image, for visual review.
+def get_face_chip(sighting_id: int, ctx: Context | None = None) -> list:
+    """Return a sighting's aligned face chip for visual review — as an inline image AND a link.
 
     Pairs with ``search_face`` / ``search_similar`` / ``list_sightings``: take a hit's
-    ``sighting_id`` and call this to actually SEE the face in the client (the result is an image,
-    not a path). Returns the stored 112x112 aligned chip.
+    ``sighting_id`` and call this to SEE the face. Returns the stored 112x112 aligned chip two ways:
+    an inline image, and a URL to the ``GET /chip/<id>`` viewer. Claude clients render tool-result
+    images only inside the collapsed tool accordion (never inline), so SURFACE THE LINK to the user
+    so they can open the face in a browser. Needs the ``store`` extra and a populated DB.
     """
     require_scope(TOOL_SCOPES["get_face_chip"])
     store = _open_store()
@@ -581,7 +623,12 @@ def get_face_chip(sighting_id: int) -> Image:
         s = store.get_sighting(sighting_id, with_embedding=False)
         if s is None or not s.chip_path:
             raise ValueError(f"no chip for sighting {sighting_id}")
-        return Image(path=s.chip_path)
+        base = _chip_base_url(ctx)
+        url = f"{base}/chip/{sighting_id}" if base else f"/chip/{sighting_id}"
+        return [
+            Image(path=s.chip_path),
+            f"Aligned face for sighting {sighting_id} — open in a browser: {url}",
+        ]
     finally:
         store.close()
 

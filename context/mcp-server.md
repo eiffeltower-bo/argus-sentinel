@@ -17,7 +17,7 @@ changes. Transport is **streamable HTTP**; the endpoint is `/mcp`.
 | `search_similar(sighting_id, top_k, cameras, since, min_quality, actor)` | "More like this": find more sightings of the person in an existing sighting (uses its stored embedding — no probe image). | medium |
 | `list_sightings(cameras, min_quality, limit)` | List stored sightings (metadata + evidence `chip_path`, no vectors). Discover sighting ids for `search_similar`. | cheap |
 | `list_identities(type)` | List identities — `known` (enrolled) + `provisional` (clusters); filter by `type`. | cheap |
-| `get_face_chip(sighting_id)` | Return a sighting's aligned face **as an inline image** (not a path) so the operator can see the face. Pair with `search_face`/`search_similar`/`list_sightings`. | trivial |
+| `get_face_chip(sighting_id)` | Return a sighting's aligned face as an **inline image + a link** to the `GET /chip/<id>` viewer (surface the link — Claude renders tool images only in the collapsed accordion). Pair with `search_face`/`search_similar`/`list_sightings`. | trivial |
 | `enroll_identity(label, images \| images_base64 \| upload_ids, source, device, actor)` | Enroll a known person from face photos into the watchlist gallery → new identity id. Remote clients pass `upload_ids` (from `POST /upload`) or `images_base64`; `images` are server-side paths. Needs `face`+`store`. | medium |
 | `cluster_sightings(space_id, min_cluster_size, min_samples, include_assigned, actor)` | Group unlabeled sightings into provisional identities (HDBSCAN). Needs the `cluster` extra. | medium |
 | `audit_log(actor, since)` | Read the compliance audit trail (every search/enroll/cluster/assignment is logged). | trivial |
@@ -122,9 +122,19 @@ image bytes**, validates + stores them, and returns a short `upload_id` to pass 
 
 Operator flow from a chat: upload via the page → copy the `upload_id` → tell the chat *"search the
 uploaded face `<id>`"* → it calls `search_face(upload_id="<id>")`. To view results, pass a hit's
-`sighting_id` to `get_face_chip`, which returns the face **as an inline image**. Uploads land under
-`<ARGUS_DB dir>/uploads`; the endpoint caps size at 10 MB and **bypasses MCP auth** (custom route)
-— gate it at a proxy if exposed untrusted.
+`sighting_id` to `get_face_chip`. Uploads land under `<ARGUS_DB dir>/uploads`; the endpoint caps
+size at 10 MB and **bypasses MCP auth** (custom route) — gate it at a proxy if exposed untrusted.
+
+### Viewing faces back (the `/chip` viewer)
+
+`get_face_chip` returns the aligned face two ways: an inline image **and** a link to
+`GET /chip/<sighting_id>` (a PNG-serving HTTP route, same server/port). The link matters because
+**Claude clients render tool-result images only inside the collapsed tool accordion, never inline**
+in the reply ([claude-ai-mcp#238](https://github.com/anthropics/claude-ai-mcp/issues/238)) — so the
+agent should surface the link, which the operator opens in a browser. The link's host comes from
+`ARGUS_PUBLIC_URL` (set it to the URL operators reach the server at, e.g. `http://host:8001`);
+if unset it's derived from the request's `Host`. Like `/upload`, `/chip` is a custom route and
+**bypasses MCP auth** — gate at a proxy if exposed untrusted.
 
 ---
 
@@ -248,8 +258,9 @@ Tool results arrive both as `structuredContent` (a dict) and as text in `content
   `"sighting:<id>"`; `search_face`'s is the path / `upload_id` / `"<uploaded image>"`.) Probe input:
   exactly one of `upload_id` (from `POST /upload`), `image_base64`, or `image` (server path) — see
   the upload section above.
-- **`get_face_chip`** (`sighting_id`) → an **image** content block (the aligned face chip), not
-  JSON — renders directly in the client.
+- **`get_face_chip`** (`sighting_id`) → an **image** content block (the aligned face chip) **plus a
+  text link** to `GET /chip/<sighting_id>`. Surface the link: Claude clients render tool-result
+  images only inside the collapsed tool accordion, so the operator opens the link to see the face.
 - **`ingest_clip`** → `{video_id, video_path, n_frames, n_tracks, n_faces_detected, n_gated_out,
   n_sightings, avg_quality, summary}`.
 - **`list_sightings`** → `{n, sightings:[{id, video_id, camera_id, track_id, frame_idx, ts, x1, y1,
