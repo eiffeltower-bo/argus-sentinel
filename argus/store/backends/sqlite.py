@@ -206,6 +206,11 @@ class SqliteStore:
         cur = self.conn.execute("SELECT * FROM sightings ORDER BY id")
         return [dict(r) for r in cur.fetchall()]
 
+    def list_videos(self) -> list[dict]:
+        """All ingested video rows, for inspection/verification."""
+        cur = self.conn.execute("SELECT * FROM videos ORDER BY id")
+        return [dict(r) for r in cur.fetchall()]
+
     def count_vectors(self) -> int:
         """How many embedding vectors are indexed — should equal the sighting count."""
         return int(self.conn.execute("SELECT count(*) FROM vec_sightings").fetchone()[0])
