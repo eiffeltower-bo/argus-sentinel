@@ -64,6 +64,20 @@ services:
     image: argus:mcp
     ports:
       - "${ARGUS_MCP_PORT:-8000}:${ARGUS_MCP_PORT:-8000}"
+    # The MCP SDK rejects requests whose Host header isn't allow-listed (DNS-rebinding guard), so
+    # reaching the server from another machine needs the Docker host's LAN ip allow-listed:
+    #   ARGUS_MCP_ALLOWED_HOSTS=192.168.1.14 docker compose up -d mcp
+    # (or ARGUS_MCP_INSECURE=1 to turn the guard off entirely on a trusted LAN).
+    environment:
+      ARGUS_MCP_ALLOWED_HOSTS: ${ARGUS_MCP_ALLOWED_HOSTS:-}
+      ARGUS_MCP_ALLOWED_ORIGINS: ${ARGUS_MCP_ALLOWED_ORIGINS:-}
+      ARGUS_MCP_INSECURE: ${ARGUS_MCP_INSECURE:-}
+      # OAuth 2.1 (Resource Server). Off by default; flip ARGUS_MCP_AUTH=on (+ bring up the
+      # keycloak service) to require tokens. See the "hostname" note below / mcp-server.md.
+      ARGUS_MCP_AUTH: ${ARGUS_MCP_AUTH:-off}
+      ARGUS_OAUTH_ISSUER: ${ARGUS_OAUTH_ISSUER:-}
+      ARGUS_OAUTH_RESOURCE: ${ARGUS_OAUTH_RESOURCE:-http://localhost:8000/mcp}
+      ARGUS_OAUTH_SCOPES: ${ARGUS_OAUTH_SCOPES:-}
     volumes:
       - ${ARGUS_DATA:-./data}:/data:ro
       - ./out:/app/out
@@ -81,6 +95,32 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  # Keycloak — the OAuth 2.1 Authorization Server (IdP) for testing MCP auth. Imports the `argus`
+  # realm (deploy/keycloak/realm-argus.json: an argus-mcp public PKCE client, the argus:* scopes,
+  # an audience mapper binding tokens to http://localhost:8000/mcp, and a test user analyst/analyst).
+  # NOT a dependency of the `mcp` service — bring it up explicitly only when testing auth:
+  #   docker compose up -d keycloak                  # admin console: http://localhost:8080 (admin/admin)
+  # then run the RS with ARGUS_MCP_AUTH=on (on the host is simplest — see mcp-server.md hostname note).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # The token issuer's base URL — must be the SAME host MCPJam and the RS both resolve. Default
+      # localhost (loopback dev); for LAN/headless set KEYCLOAK_HOSTNAME=http://<server-ip>:8080 so
+      # the issuer becomes http://<server-ip>:8080/realms/argus. start-dev allows http.
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-http://localhost:8080}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      # Substituted into the realm's audience mapper (deploy/keycloak/realm-argus.json) so issued
+      # tokens are aud-bound to the RS's client-facing URL. Keep it == ARGUS_OAUTH_RESOURCE.
+      ARGUS_MCP_RESOURCE: ${ARGUS_OAUTH_RESOURCE:-http://localhost:8000/mcp}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./deploy/keycloak:/opt/keycloak/data/import:ro
 
 volumes:
   argus-uv-cache:

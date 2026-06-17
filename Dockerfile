@@ -99,7 +99,9 @@ CMD ["sleep", "infinity"]
 # See docker-compose.yml `mcp` / `mcp-gpu` services.
 FROM runtime AS mcp
 USER root
-RUN --mount=type=cache,target=/root/.cache/pip pip install "mcp>=1.9"
+# mcp: the server stack. pyjwt[crypto]: OAuth token verification (the mcp-auth extra), lazy-loaded
+# only when ARGUS_MCP_AUTH=on, but baked in so an auth-enabled deployment needs no rebuild.
+RUN --mount=type=cache,target=/root/.cache/pip pip install "mcp>=1.9" "pyjwt[crypto]>=2.8"
 USER argus
 EXPOSE 8000
 ENTRYPOINT ["argus-mcp"]

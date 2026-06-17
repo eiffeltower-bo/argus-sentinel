@@ -17,18 +17,58 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
-from argus import analyze_audio, peek_video, peek_videos, search_by_image, track_video
+from argus import (
+    DEFAULT_AUDIO_MODEL,
+    OpenVocabularyDetector,
+    analyze_audio,
+    peek_video,
+    peek_videos,
+    search_by_image,
+    track_video,
+)
+from argus.core import TARGET_CLASSES
 
 from ._serialize import audio_to_dict, peek_to_dict, search_to_dict, tracking_to_dict
+from .auth import (
+    AuthConfig,
+    TOOL_SCOPES,
+    build_auth,
+    require_scope,
+    set_auth_enabled,
+    set_tool_scopes_enabled,
+)
 
 mcp = FastMCP("argus")
 
 _DEFAULT_TARGETS = ["person", "vehicle"]
+# The fixed YOLO model's COCO groups. Targets within this set ride the fast detector; anything
+# else triggers the open-vocabulary model (see _detection_kwargs).
+_COCO_TARGET_NAMES = frozenset(TARGET_CLASSES)
+
+
+def _detection_kwargs(targets: list[str] | None, device: str | None) -> dict[str, Any]:
+    """Pick the detector for a peek/track call from the requested ``targets``.
+
+    The default (``person``/``vehicle``) — or any subset of those COCO groups — rides the fast,
+    fixed YOLO model via ``targets=``. Any *other* free-text class (e.g. ``"forklift"``,
+    ``"hard hat"``) swaps in the open-vocabulary YOLO-World detector via ``detector=``, so an MCP
+    agent can ask for arbitrary objects without picking a model itself. The open-vocab path needs
+    the ``open-vocab`` extra (ultralytics' CLIP fork) and is heavier than the fixed model.
+
+    ``device`` is folded into the right place: passed straight through on the fixed path, and
+    handed to the detector on the open-vocab path (the facade infers device from the detector).
+    """
+    chosen = list(targets) if targets else list(_DEFAULT_TARGETS)
+    if {t.lower() for t in chosen} <= _COCO_TARGET_NAMES:
+        return {"targets": tuple(t.lower() for t in chosen), "device": device}
+    return {"detector": OpenVocabularyDetector(chosen, device=device)}
 
 
 def _open_store():
@@ -54,6 +94,7 @@ def list_clips(directory: str, glob: str = "*.mp4") -> dict[str, Any]:
     server-side/container paths (footage is typically mounted read-only at /data). Returns each
     clip's path and size in bytes.
     """
+    require_scope(TOOL_SCOPES["list_clips"])
     base = Path(directory)
     clips = sorted(base.glob(glob))
     return {
@@ -71,28 +112,42 @@ def peek_folder(
     targets: list[str] | None = None,
     n_samples: int = 24,
     min_hits: int = 2,
+    limit: int | None = 25,
     device: str | None = None,
 ) -> dict[str, Any]:
-    """Fast-triage every clip in a folder: which ones contain people/vehicles worth tracking.
+    """Fast-triage clips in a folder: which ones contain people/vehicles worth tracking.
 
     Samples a few frames per clip and runs a small detector in one batched pass — cheap relative
     to ``track_clip``. Run this to narrow a footage dump down to the interesting clips, then
     ``track_clip`` those. Returns counts of interesting/total/unreadable plus a per-clip verdict.
+
+    Peeking is ~1s per clip, and this is ONE synchronous call — a large folder can exceed the
+    client's request timeout. ``limit`` (default 25) caps how many of the matched clips are peeked
+    (the first N by name); ``n_peeked`` vs ``n_matched`` in the result shows whether more remain.
+    Pass ``limit=null`` to peek everything (only on small folders), or narrow ``glob`` to select a
+    subset.
+
+    ``targets`` defaults to ``["person", "vehicle"]`` on the fast fixed YOLO model. Pass other
+    free-text classes (e.g. ``["forklift", "hard hat"]``) to switch to the open-vocabulary
+    detector automatically (heavier; needs the ``open-vocab`` extra).
     """
+    require_scope(TOOL_SCOPES["peek_folder"])
     base = Path(directory)
-    clips = sorted(base.glob(glob))
+    matched = sorted(base.glob(glob))
+    clips = matched[:limit] if limit is not None else matched
     results = peek_videos(
         clips,
-        targets=tuple(targets or _DEFAULT_TARGETS),
         n_samples=n_samples,
         min_hits=min_hits,
-        device=device,
+        **_detection_kwargs(targets, device),
     )
     verdicts = [peek_to_dict(r) for _, r in sorted(results.items()) if r is not None]
     unreadable = [str(p) for p, r in sorted(results.items()) if r is None]
     return {
         "directory": str(base),
-        "n_clips": len(clips),
+        "n_matched": len(matched),
+        "n_peeked": len(clips),
+        "truncated": len(clips) < len(matched),
         "n_interesting": sum(v["interesting"] for v in verdicts),
         "n_unreadable": len(unreadable),
         "clips": verdicts,
@@ -112,13 +167,17 @@ def peek_clip(
 
     Samples frames and reports per-category counts, frames-with-hits, and an ``interesting``
     boolean. Much cheaper than ``track_clip`` — use it to decide whether full tracking is worth it.
+
+    ``targets`` defaults to ``["person", "vehicle"]`` on the fast fixed YOLO model. Pass other
+    free-text classes (e.g. ``["forklift", "hard hat"]``) to switch to the open-vocabulary
+    detector automatically (heavier; needs the ``open-vocab`` extra).
     """
+    require_scope(TOOL_SCOPES["peek_clip"])
     r = peek_video(
         Path(path),
-        targets=tuple(targets or _DEFAULT_TARGETS),
         n_samples=n_samples,
         min_hits=min_hits,
-        device=device,
+        **_detection_kwargs(targets, device),
     )
     return peek_to_dict(r)
 
@@ -139,13 +198,17 @@ def track_clip(
     detects every frame) — run ``peek_clip`` first to confirm the clip is interesting, and use
     ``max_frames``/``stride`` to bound work on long clips. Set ``render=true`` to also write an
     annotated H.264 video; its server-side path is returned under ``rendered``.
+
+    ``targets`` defaults to ``["person", "vehicle"]`` on the fast fixed YOLO model. Pass other
+    free-text classes (e.g. ``["forklift", "hard hat"]``) to switch to the open-vocabulary
+    detector automatically (heavier; needs the ``open-vocab`` extra).
     """
+    require_scope(TOOL_SCOPES["track_clip"])
     r = track_video(
         Path(path),
-        targets=tuple(targets or _DEFAULT_TARGETS),
         max_frames=max_frames,
         stride=stride,
-        device=device,
+        **_detection_kwargs(targets, device),
     )
     rendered = None
     if render:
@@ -172,11 +235,18 @@ def search_face(
     review. These are CANDIDATES for human adjudication, never an automated identity decision.
     Needs the ``face`` + ``store`` extras and a populated DB (``ARGUS_DB``); the search is audited.
     """
+    require_scope(TOOL_SCOPES["search_face"])
     store = _open_store()
     try:
         hits = search_by_image(
-            image, store=store, top_k=top_k, cameras=cameras, since=since,
-            min_quality=min_quality, device=device, actor=actor,
+            image,
+            store=store,
+            top_k=top_k,
+            cameras=cameras,
+            since=since,
+            min_quality=min_quality,
+            device=device,
+            actor=actor,
         )
         return search_to_dict(image, hits)
     finally:
@@ -186,7 +256,7 @@ def search_face(
 @mcp.tool()
 def classify_audio(
     path: str,
-    model: str = "bioamla/ast-esc50",
+    model: str = DEFAULT_AUDIO_MODEL,
     overlap_seconds: float = 1.0,
     segment_seconds: float = 5.0,
     top_k: int = 2,
@@ -196,26 +266,192 @@ def classify_audio(
     """Classify the audio track of a server-side clip into per-segment sound labels.
 
     Extracts 16kHz mono audio, windows it into overlapping ``segment_seconds`` segments, and runs
-    an audio-classification model on each (AST/ESC-50 by default; pass a CLAP ``model`` +
-    ``candidate_labels`` for zero-shot). Returns per-segment top-k ``{class, confidence}``
-    predictions with time spans. Needs the ``audio`` extra (transformers + soundfile).
+    an audio model on each. The default is zero-shot CLAP: it scores each window against
+    ``candidate_labels`` (a surveillance-oriented default set if you pass none), so to look for
+    specific sounds just pass your own labels, e.g. ``["gunshot", "glass breaking", "speech"]``.
+    Pass a fixed-label ``model`` (e.g. ``"bioamla/ast-esc50"``) to use its built-in taxonomy
+    instead. Returns per-segment top-k ``{class, confidence}`` predictions with time spans. Needs
+    the ``audio`` extra (transformers + soundfile).
     """
-    return audio_to_dict(analyze_audio(
-        Path(path), model=model, overlap_seconds=overlap_seconds, segment_seconds=segment_seconds,
-        top_k=top_k, candidate_labels=candidate_labels, device=device,
-    ))
+    require_scope(TOOL_SCOPES["classify_audio"])
+    return audio_to_dict(
+        analyze_audio(
+            Path(path),
+            model=model,
+            overlap_seconds=overlap_seconds,
+            segment_seconds=segment_seconds,
+            top_k=top_k,
+            candidate_labels=candidate_labels,
+            device=device,
+        )
+    )
+
+
+# DNS-rebinding allow-list entries that always work for a local client (FastMCP's own default).
+_LOCAL_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+_LOCAL_ORIGINS = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+
+
+def _csv(value: str | None) -> list[str]:
+    """Split a comma-separated CLI/env value into a clean list."""
+    return [item.strip() for item in (value or "").split(",") if item.strip()]
+
+
+def _transport_security(
+    allowed_hosts: list[str], allowed_origins: list[str], insecure: bool
+) -> TransportSecuritySettings | None:
+    """Build DNS-rebinding settings for a LAN-exposed server.
+
+    The MCP SDK rejects any request whose ``Host`` header isn't in an allow-list (a DNS-rebinding
+    guard), and FastMCP seeds that list with localhost only — so a server bound to ``0.0.0.0`` is
+    still unreachable from another machine (HTTP 421) until its LAN host is allowed. We always keep
+    the localhost entries and add the operator's hosts on top:
+
+    - ``allowed_hosts`` entries without a port get a ``:*`` companion (match any port), so
+      ``--allowed-hosts 192.168.1.14`` just works; entries with a port are taken verbatim.
+    - ``insecure`` turns the guard off entirely (any Host accepted) — only for a trusted LAN.
+
+    Returns ``None`` when nothing LAN-related was requested, leaving FastMCP's localhost default.
+    """
+    if insecure:
+        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    if not allowed_hosts and not allowed_origins:
+        return None
+    hosts = list(_LOCAL_HOSTS)
+    origins = list(_LOCAL_ORIGINS)
+    for h in allowed_hosts:
+        hosts.append(h)
+        if ":" not in h:  # bare host -> allow any port + a matching http origin
+            hosts.append(f"{h}:*")
+            origins.append(f"http://{h}:*")
+        else:
+            origins.append(f"http://{h}")
+    origins.extend(allowed_origins)
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True, allowed_hosts=hosts, allowed_origins=origins
+    )
+
+
+# The six tool functions, in registration order. Used to re-register them on a fresh FastMCP
+# instance when auth is enabled (the module-level ``mcp`` has no token verifier).
+_TOOLS = [list_clips, peek_folder, peek_clip, track_clip, search_face, classify_audio]
+
+
+def build_server(cfg: AuthConfig) -> FastMCP:
+    """Return the FastMCP instance to serve, applying OAuth when ``cfg.enabled``.
+
+    Auth off: reuse the module-level ``mcp`` (tools already registered) — identical to before.
+    Auth on: build a fresh FastMCP with the JWT ``token_verifier`` + ``AuthSettings`` (so the SDK
+    serves the RFC 9728 metadata + ``401`` challenge and enforces any blanket scopes) and
+    re-register the same tool functions on it.
+    """
+    verifier, settings = build_auth(cfg)
+    if verifier is None:
+        return mcp
+    server = FastMCP("argus", token_verifier=verifier, auth=settings)
+    for fn in _TOOLS:
+        server.tool()(fn)
+    return server
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="argus-mcp", description="argus MCP server (HTTP)")
     ap.add_argument("--host", default=os.environ.get("ARGUS_MCP_HOST", "0.0.0.0"))
+    ap.add_argument("--port", type=int, default=int(os.environ.get("ARGUS_MCP_PORT", "8000")))
     ap.add_argument(
-        "--port", type=int, default=int(os.environ.get("ARGUS_MCP_PORT", "8000"))
+        "--allowed-hosts",
+        default=os.environ.get("ARGUS_MCP_ALLOWED_HOSTS", ""),
+        help="comma-separated Host values to accept when exposing on the LAN (DNS-rebinding "
+        "allow-list), e.g. '192.168.1.14' (any port) or '192.168.1.14:8765'. localhost is "
+        "always allowed.",
+    )
+    ap.add_argument(
+        "--allowed-origins",
+        default=os.environ.get("ARGUS_MCP_ALLOWED_ORIGINS", ""),
+        help="comma-separated Origin values to accept (only needed for browser-based clients)",
+    )
+    ap.add_argument(
+        "--insecure-disable-host-check",
+        action="store_true",
+        default=os.environ.get("ARGUS_MCP_INSECURE", "") not in ("", "0", "false"),
+        help="disable DNS-rebinding (Host/Origin) protection entirely — only on a trusted LAN",
     )
     args = ap.parse_args(argv)
-    mcp.settings.host = args.host
-    mcp.settings.port = args.port
-    mcp.run(transport="streamable-http")
+
+    # Build the server with OAuth applied iff ARGUS_MCP_AUTH=on. set_auth_enabled toggles the
+    # per-tool scope checks (no-op when off, so the loopback/dev path is unchanged).
+    cfg = AuthConfig.from_env()
+    set_auth_enabled(cfg.enabled)
+    # Per-tool scope checks default on; set ARGUS_MCP_TOOL_SCOPES=off to require only a valid token
+    # (DCR clients' tokens often lack the argus:* scopes).
+    set_tool_scopes_enabled(
+        os.environ.get("ARGUS_MCP_TOOL_SCOPES", "on").strip().lower() in ("on", "1", "true", "yes")
+    )
+    server = build_server(cfg)
+    if cfg.enabled:
+        print(
+            f"auth: ON — issuer={cfg.issuer} resource={cfg.resource} "
+            f"blanket_scopes={cfg.scopes or '(none; per-tool only)'}",
+            file=sys.stderr,
+            flush=True,
+        )
+    else:
+        print(
+            "auth: OFF (set ARGUS_MCP_AUTH=on to require OAuth tokens)",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    server.settings.host = args.host
+    server.settings.port = args.port
+    # Return tool results as a single JSON response rather than an SSE stream. Browser-based MCP
+    # clients (e.g. MCPJam) read a complete JSON body and proceed immediately, whereas a streamed
+    # SSE response to the POST can stall them. Our tools return final results (no incremental
+    # progress), so nothing is lost. Override with ARGUS_MCP_JSON_RESPONSE=off to force SSE.
+    server.settings.json_response = os.environ.get(
+        "ARGUS_MCP_JSON_RESPONSE", "on"
+    ).strip().lower() in ("on", "1", "true", "yes")
+    # Stateless mode: don't require an Mcp-Session-Id header on follow-up requests (each request is
+    # self-contained). Some browser MCP clients don't echo the session id, so they stall after
+    # initialize against a stateful server. Our tools hold no per-session state, so this is safe.
+    # Default off (spec-standard stateful); enable with ARGUS_MCP_STATELESS=on.
+    server.settings.stateless_http = os.environ.get(
+        "ARGUS_MCP_STATELESS", "off"
+    ).strip().lower() in ("on", "1", "true", "yes")
+
+    allowed_hosts = _csv(args.allowed_hosts)
+    allowed_origins = _csv(args.allowed_origins)
+    ts = _transport_security(allowed_hosts, allowed_origins, args.insecure_disable_host_check)
+    if ts is not None:
+        server.settings.transport_security = ts
+    elif args.host not in ("127.0.0.1", "localhost", "::1"):
+        # Bound to a non-loopback address but no allow-list given: FastMCP locked the guard to
+        # localhost at construction time, so LAN clients will hit 421. Fail closed, but say why.
+        print(
+            f"WARNING: serving on {args.host} but only localhost is allowed; LAN clients will be "
+            "rejected (HTTP 421). Pass --allowed-hosts <ip> (or --insecure-disable-host-check).",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    # Serve over streamable HTTP. We build the ASGI app ourselves (instead of server.run()) to layer
+    # CORS on top: browser-based MCP clients (e.g. the MCPJam inspector) send a cross-origin
+    # preflight OPTIONS before each call, and the auth layer wraps the /mcp route — so without CORS
+    # the preflight is 401'd with no Access-Control-* headers and the browser blocks the connection.
+    # CORS as the outermost middleware answers the preflight before auth runs; the bearer token and
+    # the DNS-rebinding Host/Origin guard remain the actual access controls.
+    import uvicorn
+    from starlette.middleware.cors import CORSMiddleware
+
+    app = server.streamable_http_app()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["Mcp-Session-Id", "WWW-Authenticate"],
+    )
+    uvicorn.run(app, host=server.settings.host, port=server.settings.port)
     return 0
 
 

@@ -136,12 +136,22 @@ Expose the triage/track workflow as tools an LLM agent can call (`list_clips`, `
 for sound labeling) over HTTP:
 
 ```bash
-uv run argus-mcp --port 8000                 # local
+uv run argus-mcp --port 8000                 # local (localhost only)
 docker compose up -d mcp                     # or containerized (mcp-gpu for GPU)
 ```
 
-Step-by-step tutorial (local + Docker, a test client, and connecting Claude Code):
-[context/mcp-server.md](context/mcp-server.md).
+To reach the server **from another machine on the LAN**, allow-list this host's IP — the MCP SDK
+rejects requests whose `Host` header isn't allow-listed (a DNS-rebinding guard), so binding to
+`0.0.0.0` alone returns HTTP 421:
+
+```bash
+uv run argus-mcp --host 0.0.0.0 --port 8000 --allowed-hosts 192.168.1.14   # then http://192.168.1.14:8000/mcp
+ARGUS_MCP_ALLOWED_HOSTS=192.168.1.14 docker compose up -d mcp              # same, containerized
+```
+
+A bare IP allows any port; pass `--insecure-disable-host-check` (env `ARGUS_MCP_INSECURE=1`) to
+turn the guard off entirely on a trusted LAN. Step-by-step tutorial (local + Docker, a test
+client, and connecting Claude Code): [context/mcp-server.md](context/mcp-server.md).
 
 ## Tutorial (Docker, end-to-end)
 

@@ -1,0 +1,127 @@
+{
+  "realm": "argus",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 300,
+  "registrationAllowed": false,
+  "clientScopes": [
+    {
+      "name": "argus:peek",
+      "description": "Triage tools: list_clips, peek_folder, peek_clip",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "true" }
+    },
+    {
+      "name": "argus:track",
+      "description": "Heavy tool: track_clip",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "true" }
+    },
+    {
+      "name": "argus:search",
+      "description": "Face re-identification: search_face",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "true" }
+    },
+    {
+      "name": "argus:audio",
+      "description": "Audio classification: classify_audio",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "true" }
+    },
+    {
+      "name": "argus-resource",
+      "description": "Core claims for the argus RS: audience binding (RFC 8707) + sub/auth_time (replicated from the built-in basic scope, which a top-level clientScopes array suppresses).",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "false", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "argus-mcp-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "${ARGUS_MCP_RESOURCE:http://localhost:8000/mcp}",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": { "access.token.claim": "true", "introspection.token.claim": "true" }
+        },
+        {
+          "name": "auth_time",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usersessionmodel-note-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.session.note": "AUTH_TIME",
+            "claim.name": "auth_time",
+            "jsonType.label": "long",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "defaultDefaultClientScopes": [
+    "argus:peek",
+    "argus:track",
+    "argus:search",
+    "argus:audio",
+    "argus-resource"
+  ],
+  "clients": [
+    {
+      "clientId": "argus-mcp",
+      "name": "argus MCP (test client)",
+      "description": "Public PKCE client for the MCPJam inspector / dev MCP clients.",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "http://localhost:*",
+        "http://127.0.0.1:*",
+        "https://localhost:*"
+      ],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "+"
+      },
+      "defaultClientScopes": [
+        "argus:peek",
+        "argus:track",
+        "argus:search",
+        "argus:audio",
+        "argus-resource"
+      ],
+      "optionalClientScopes": [
+        "offline_access"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "analyst",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "analyst@example.com",
+      "firstName": "Test",
+      "lastName": "Analyst",
+      "credentials": [
+        { "type": "password", "value": "analyst", "temporary": false }
+      ],
+      "realmRoles": [
+        "offline_access"
+      ]
+    }
+  ]
+}

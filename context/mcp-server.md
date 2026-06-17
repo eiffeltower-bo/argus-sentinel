@@ -94,6 +94,84 @@ connect to `http://<host>:8000/mcp`.
 
 ---
 
+## Authentication (OAuth 2.1)
+
+Auth is **off by default**. When enabled, the server acts as an OAuth 2.1 **Resource Server (RS)**:
+it validates the bearer token an MCP client attaches to every request and gates each tool by scope.
+Tokens are *issued* by a separate **Authorization Server (IdP)** — here **Keycloak** — which runs
+the user login/consent/PKCE dance. The MCP SDK does the discovery plumbing for us: it serves the
+RFC 9728 Protected Resource Metadata document and the `401 WWW-Authenticate` challenge from
+`AuthSettings`; argus only implements the token verifier (`argus/mcp/auth.py`,
+`JwtTokenVerifier` — RS256 over the IdP's JWKS, checking `iss` + `aud` + `exp`).
+
+**Toggle & config** (env, see `.env.example`):
+
+| Var | Meaning |
+|-----|---------|
+| `ARGUS_MCP_AUTH` | `off` (default) or `on`. On → every request needs a valid token. |
+| `ARGUS_OAUTH_ISSUER` | IdP base URL (token issuer), e.g. `http://localhost:8080/realms/argus`. |
+| `ARGUS_OAUTH_RESOURCE` | This server's canonical URI; tokens must be audience-bound to it (RFC 8707), e.g. `http://localhost:8000/mcp`. |
+| `ARGUS_OAUTH_SCOPES` | Optional *blanket* scope(s) the SDK requires on every request (blank = none). |
+
+**Scopes are per-tool.** Beyond a valid token, each tool needs its own scope:
+`argus:peek` (`list_clips`/`peek_folder`/`peek_clip`), `argus:track` (`track_clip`),
+`argus:search` (`search_face`), `argus:audio` (`classify_audio`). A valid token missing a tool's
+scope yields an **MCP tool error** ("insufficient scope") — not an HTTP `403` (all tools share the
+one `POST /mcp` route). HTTP `403 insufficient_scope` is reserved for the SDK's blanket
+`ARGUS_OAUTH_SCOPES`.
+
+**Test loop (Keycloak + MCPJam).** Bring up the IdP, run the RS, then drive the flow:
+```bash
+docker compose up -d keycloak          # imports the `argus` realm; console http://localhost:8080 (admin/admin)
+# Run the RS on the host (simplest — see the hostname note) with auth on:
+ARGUS_MCP_AUTH=on \
+  ARGUS_OAUTH_ISSUER=http://localhost:8080/realms/argus \
+  ARGUS_OAUTH_RESOURCE=http://localhost:8000/mcp \
+  uv run argus-mcp --host 127.0.0.1 --port 8000
+# In another terminal, the required conformance tool — the MCPJam OAuth Debugger:
+npx @mcpjam/inspector@latest           # open the printed localhost URL, point it at http://localhost:8000/mcp
+```
+In the inspector's **OAuth Debugger**, run the guided flow — it walks PRM **discovery (RFC 9728)** →
+AS metadata → client registration → **authorization redirect + PKCE** → **token exchange** →
+**authenticated MCP request**, with conformance checks per spec version. Log in as the realm's test
+user **`analyst` / `analyst`**. Green across steps = pass.
+
+The realm (`deploy/keycloak/realm-argus.json`) ships an `argus-mcp` public PKCE client, the four
+`argus:*` scopes (granted to the test user by default), an **audience mapper** binding tokens to
+`http://localhost:8000/mcp`, and the `analyst` user.
+
+**Quick checks without a browser:**
+```bash
+# PRM document points at the IdP:
+curl -s http://localhost:8000/.well-known/oauth-protected-resource/mcp
+# No token -> 401 + WWW-Authenticate with resource_metadata:
+curl -i -X POST http://localhost:8000/mcp -H 'Accept: application/json, text/event-stream' \
+  -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+# Mint a token directly (Keycloak direct-access grant) and call with it:
+TOKEN=$(curl -s -X POST http://localhost:8080/realms/argus/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=argus-mcp -d username=analyst -d password=analyst -d scope=openid \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+curl -i -X POST http://localhost:8000/mcp -H "Authorization: Bearer $TOKEN" \
+  -H 'Accept: application/json, text/event-stream' -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+```
+Expected: PRM lists `authorization_servers: [http://localhost:8080/realms/argus]`; no/garbage/expired/
+wrong-audience token → `401`; valid token → `200` + an `mcp-session-id` header.
+
+**Hostname note (the one fiddly bit).** The issuer URL must resolve *identically* from MCPJam (on
+the host) and from the RS — otherwise JWKS fetch or issuer validation fails. The simplest loop runs
+Keycloak in compose (`localhost:8080`) and the **RS on the host** (above), so both see
+`localhost:8080`. Running the RS in the `mcp` container instead needs the issuer reachable under the
+same name inside the container (a shared network alias / `extra_hosts`); use the host-RS loop unless
+you specifically need the containerized RS.
+
+**Production.** Use short token lifetimes, terminate **TLS** at a reverse proxy (Caddy/nginx) for
+any non-loopback deployment (the spec requires HTTPS for AS endpoints and non-localhost redirects),
+and point `ARGUS_OAUTH_ISSUER` at your real IdP (a managed IdP — Auth0/Okta/WorkOS — is a drop-in
+alternative to Keycloak as long as it issues JWT access tokens with the right audience).
+
+---
+
 ## Writing your own client (snippet)
 
 `examples/mcp_client_demo.py` is the reference; the core is:
@@ -143,7 +221,14 @@ Tool results arrive both as `structuredContent` (a dict) and as text in `content
   mounted `./out` fail, `chmod 777 out` once (or run the server as your uid).
 - **Long clips.** Tools are synchronous — `track_clip` on a long clip can run for minutes and is
   bounded only by the client's request timeout. Run `peek_*` first and pass `max_frames`/`stride`.
-- **No auth.** v1 has none — intended for on-prem/LAN behind a firewall. Don't expose `:8000`
-  publicly without adding an auth layer.
+- **HTTP 421 from another machine.** The MCP SDK rejects requests whose `Host` header isn't
+  allow-listed (a DNS-rebinding guard seeded with localhost only), so binding `--host 0.0.0.0`
+  isn't enough to reach the server over the LAN. Allow-list this host's IP:
+  `argus-mcp --host 0.0.0.0 --allowed-hosts 192.168.1.14` (a bare IP allows any port), or
+  `ARGUS_MCP_ALLOWED_HOSTS=192.168.1.14 docker compose up -d mcp`. `--insecure-disable-host-check`
+  (env `ARGUS_MCP_INSECURE=1`) turns the guard off entirely on a trusted LAN.
+- **Auth is opt-in.** Off by default (loopback/LAN behind a firewall). To require OAuth tokens,
+  see [Authentication (OAuth 2.1)](#authentication-oauth-21) below. Don't expose `:8000` publicly
+  without enabling it (or fronting the server with an auth proxy + TLS).
 - **Not yet exposed:** face-ID ingest and face search (those need SDK additions) — see
   [face-id-design.md](face-id-design.md).

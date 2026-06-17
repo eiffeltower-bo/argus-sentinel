@@ -29,8 +29,9 @@ dependencies = [
 ]
 
 [dependency-groups]
-# mcp: so `uv run pytest` can import the MCP server. ruff: lint + format, enforced in CI.
-dev = ["pytest>=8.0", "mcp>=1.9", "ruff>=0.10"]
+# mcp + pyjwt: so `uv run pytest` can import the MCP server and exercise the OAuth token
+# verifier (tests/test_mcp_auth.py mint/verify JWTs). ruff: lint + format, enforced in CI.
+dev = ["pytest>=8.0", "mcp>=1.9", "pyjwt[crypto]>=2.8", "ruff>=0.10"]
 
 [project.scripts]
 argus = "argus.cli:main"
@@ -76,6 +77,10 @@ notebooks = ["jupyter>=1.1.1"]
 # MCP server (argus/mcp/) — a thin HTTP server exposing the triage/track facade as tools.
 # Optional: not pulled by the library, the CLI image, or the CPU test path. `pip install .[mcp]`.
 mcp = ["mcp>=1.9"]
+# OAuth 2.1 for the MCP server (Resource Server role): JWT/JWKS bearer-token verification.
+# pyjwt[crypto] pulls `cryptography` for RS256 and ships PyJWKClient (JWKS fetch/cache/rotation).
+# Lazy-imported by argus/mcp/auth.py — only loaded when ARGUS_MCP_AUTH=on. `pip install .[mcp,mcp-auth]`.
+mcp-auth = ["pyjwt[crypto]>=2.8"]
 
 [tool.uv.sources]
 surveillance-datasets = { git = "ssh://git@github.com/eiffeltower-bo/surveillance_datasets.git" }
